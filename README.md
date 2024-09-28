@@ -22,7 +22,7 @@ Then, ensure the following steps:
 2. Restart RStudio and follow the instructions starting with the [Installation of RStan](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started#installation-of-rstan)
 3. Install the latest version of `stan` by running the following commands
 ```R
-    install.package("devtools")
+    install.packages("devtools")
     devtools::install_github("stan-dev/cmdstanr")
     cmdstanr::install_cmdstan()
 ```
