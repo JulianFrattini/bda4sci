@@ -1,0 +1,150 @@
+---
+title: "Colliders"
+author: "Julian Frattini"
+date: '2024-10-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# cluster of libraries for easier R syntax
+library(tidyverse)
+
+# visualization and analysis of DAGs
+library(ggdag)
+```
+
+This notebook visualizes the effect of **colliders** (also called: common effects) in causal inference.
+
+## Context
+
+Let us consider a hypothetical example of a phenomenon.
+Assume we are interested in whether good researchers are also good teachers.
+
+### Causal Assumption
+
+Formally speaking, we want to estimate the effect of the research quality `R` on the educator quality `E` of an academic.
+Let us also assume that academics that are either good researchers _or_ good teachers obtain tenure `T`.
+We can visualize the causal assumptions as follows.
+
+```{r dag}
+dag <- dagify(
+  e ~ r,
+  t ~ e + r,
+  exposure = "r", outcome = "e",
+  labels = c(e = "educator", r = "researcher", t = "tenure"),
+  coords = list(x = c(r = 0, e = 2, t = 1), 
+                y = c(r = 0, e = 0, t = -1))
+)
+
+ggdag_status(dag, use_labels = "label", text = FALSE) +
+  guides(fill = "none", color = "none") + 
+  theme_dag()
+```
+
+This example might not reflect reality, it serves solely for demonstration purposes.
+
+### Simulation
+
+Let us simulate data, i.e., produce a data set in which we know the strength of the effects in our causal assumptions.
+Particularly, let us assume that
+
+- there is no effect of `R` on `E` (i.e., being a good researcher does not mean being a good educator), and
+- an academic obtains tenure when they are either a good researcher or a good educator.
+
+```{r simulation}
+n <- 500 # number of simulated units, i.e., academics
+threshold <- 0.3 # an arbitrary threshold, where any cumulative value of R and E that exceeds it means tenure
+
+d <- data.frame(
+  r = rnorm(n, 0, 1), # simulated values of R, which are normally distributed
+  e = rnorm(n, 0, 1) # simulated values of E, which are also normally distributed and not influenced by R as per our assumption
+) %>% mutate(
+  t = ifelse(r+e>threshold, TRUE, FALSE) # simulated values of T, which are TRUE if the combined value of R and E exceed the threshold
+)
+```
+
+## Analysis
+
+With the knowledge of how the data was actually produced (i.e., what the actual, causal effects connecting our variables are), let us analyze the data to see the effect of the collider.
+
+### Naive Data Analysis
+
+The naive way of analyzing this data is: the more variables, the more precise the analysis.
+This would mean to include the tenure variable `T` in the analysis, i.e., $E ~ R + T$, producing the following model.
+
+```{r model-naive}
+m1 <- lm(
+  formula = e ~ r + t,
+  data = d
+)
+
+summary(m1)
+```
+
+The model summary is very clear: being a better researcher means being a worse educator.
+This follows from $\beta_{r} \approx -0.5$, meaning: for every unit that `R` increases, `E` decreases by around -0.5.
+But that does not reflect how the data was produced.
+Something went wrong.
+
+### Visualization
+
+Let us visualize the data to investigate.
+Plotting the values of `R` and `E` in a scatter plot shows that they are indeed not related.
+The scatter plot forms a cloud with marginal distributions that resemble the normal distributions by which we defined them.
+The regression line for $E \sim R$ has a slop of almost 0, further corroborating the lack of an association.
+
+```{r vis-raw}
+ggplot(data = d, mapping = aes(x = r, y = e)) +
+  geom_point() +
+  geom_smooth(formula = (y~x), method = 'lm') + 
+  labs(x = "Researcher Quality (R)",
+       y = "Educator Quality (E)")
+```
+
+Now let's also visualize the values of the tenure variable `T`.
+The following plot shows that all data points where $E+R$ cross the threshold that we defined earlier have the value `T=TRUE`.
+
+```{r vis-tenure}
+ggplot(data = d, mapping = aes(x = r, y = e)) +
+  geom_point(aes(color = t)) +
+  geom_abline(intercept = threshold, slope = -1, color = "grey") +
+  labs(x = "Researcher Quality (R)",
+       y = "Educator Quality (E)",
+       color = "Tenure (T)")
+```
+
+Now if we fit a linear model _for each of the two groups separately_ (`T=TRUE` and `T=FALSE`), the slopes of these regression lines are clearly negative and there is a strong association.
+
+```{r vis-split}
+ggplot(data = d, mapping = aes(x = r, y = e, color = t)) +
+  geom_point() +
+  geom_smooth(formula = (y~x), method = 'lm') +
+  labs(x = "Researcher Quality (R)",
+       y = "Educator Quality (E)",
+       color = "Tenure (T)")
+```
+
+If you look closely, you will even find the parameters of `m1` in this graph again. 
+The `(Intercept)` is where the regression line for `T=FALSE` intersects the graph at $R=0$.
+The `tTRUE` coefficient is the vertical distance between the two regression lines.
+And `r` represents the slope of both of these regression lines.
+
+### Proper Data Analysis
+
+The reason for this misinterpretation of `m1` of our data is because `T` is a **collider** in our causal DAG.
+For causal inference, one must not condition on a collider, as this otherwise opens a non-causal backdoor path.
+The proper model - though using less parameters - would only consider $E \sim R$ and look as follows.
+
+```{r model-proper}
+m2 <- lm(
+  formula = e ~ r,
+  data = d
+)
+
+summary(m2)
+```
+
+
+This time, $\beta_r \approx 0$, which reflects how the data was actually produced and is the correct causal inference here.
