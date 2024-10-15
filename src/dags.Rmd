@@ -1,0 +1,74 @@
+---
+title: "dags"
+author: "Julian Frattini"
+date: '2024-10-15'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# cluster of libraries for easier R syntax
+library(tidyverse)
+
+# visualization and analysis of DAGs
+library(ggdag)
+```
+
+## Visualizing Causal Assumptions
+
+An essential step in statistical causal inference is to visualize causal assumptions.
+An easy tool for this is a directed, acyclic graph (DAG), where nodes represents events (or variables) and edges represent (assumed) causal relationships.
+
+### Specifying a DAG
+
+Using the `ggdag::dagify` function, we can specify a minimal DAG that contains
+
+1. a formula of the structure `response ~ treatment`,
+2. an `exposure` that specifies the treatment variable of interest, and
+3. an `outcome` that specifies the response variable of interest.
+
+```{r dag1-specification}
+dag1 <- dagify(
+  a ~ b,
+  exposure = "b",
+  outcome = "a"
+)
+```
+
+We can visualize the dag using the `ggdag::ggdag_status` function as such.
+
+```{r dag1-visualization}
+ggdag_status(dag1) +
+  guides(fill = "none", color = "none") + # remove the "obvious" legends for fill and color
+  theme_dag() # remove the axes and grid that ggplot defaults to
+```
+
+### Options
+
+When specifying a DAG, we can make use of several additional options.
+The following example demonstrates three of them: more than two variables and relationships, verbose labels, and specified structure.
+
+```{r dag2}
+dag2 <- dagify(
+  # specify multiple relationships by providing more formulae (which may include more than 1 predictor)
+  a ~ b + c + d,
+  b ~ d + e,
+  exposure = "b", outcome = "a",
+  
+  # specify labels by assigning one string to each variable used in the formulae
+  labels = c(a = "performance", b = "programming language", c = "motivation", d = "environment", e = "education"),
+  
+  # specify coordinates by assigning one x and one y value to each variable in the formulae
+  coords = list(x = c(a = 2, b = 1, c = 1, d = 1.5, e = 0), 
+                y = c(a = 1, b = 1, c = 1.5, d = 0.5, e = 1))
+)
+
+ggdag_status(dag2, 
+             text = FALSE, # disable the variable names (a, b, ...) within the nodes ...
+             use_labels = "label") + # ... and enable the variable labels ("performance", ...)
+  guides(fill = "none", color = "none") + 
+  theme_dag()
+```
+
+Using these tools, even complex, hierarchical causal relationships can be specified and made explicit.
