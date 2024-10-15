@@ -13,6 +13,9 @@ The repository contains the following directories and files.
   - series/ : slides for an interactive three-part series of the seminar
 - src/ : source code to follow along the examples
   - html/ : a pre-compiled version of all `Rmd` files (using `knitr`) for easier viewing
+  - `colliders.Rmd` : demonstration of the effect of common effects
+  - `dags.Rmd` : demonstration of specifying causal directed acyclic graphs
+  - `mediators.Rmd` : demonstration of the effect of a mediator
 
 ## System Requirements
 
