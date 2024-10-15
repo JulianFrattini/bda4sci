@@ -12,6 +12,7 @@ The repository contains the following directories and files.
 - slides/ : directory with all presentation slides and files
   - series/ : slides for an interactive three-part series of the seminar
 - src/ : source code to follow along the examples
+  - html/ : a pre-compiled version of all `Rmd` files (using `knitr`) for easier viewing
 
 ## System Requirements
 
