@@ -1,0 +1,137 @@
+---
+title: "Mediators"
+author: "Julian Frattini"
+date: '2024-10-15'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# cluster of libraries for easier R syntax
+library(tidyverse)
+
+# visualization and analysis of DAGs
+library(ggdag)
+```
+
+This notebook visualizes the effect of **mediators** (also called: pipes) in causal inference.
+
+## Context
+
+Let us consider a hypothetical example of a phenomenon.
+Assume we are interested in how a new tool `t` affects motivation `m`.
+Assume also that the new tool has a much nicer user interface `ui` than the old one.
+Additionally, we assume that a nice user interface generally affects motivation.
+The causal DAG reflecting our assumptions looks as follows.
+
+```{r dag}
+dag <- dagify(
+  m ~ t + ui,
+  ui ~ t,
+  exposure = "t", outcome = "m",
+  labels = c(m = "motivation", t = "tool", ui = "user interface"),
+  coords = list(x = c(m = 1, t = 0, ui = 0.5), 
+                y = c(m = 1, t = 1, ui = 0.5))
+)
+
+ggdag_status(dag, use_labels = "label", text = FALSE) +
+  guides(fill = "none", color = "none") + 
+  theme_dag()
+```
+
+Recall that this example might not reflect reality, it serves solely for demonstration purposes.
+Here, the variable `ui` is a mediator between the exposure `t` and the outcome `m`.
+
+### Simulation
+
+Let us simulate data, i.e., produce a data set in which we know the strength of the effects in our causal assumptions.
+These simulations include the following specifications:
+
+- The appeal of the user interface, i.e., the variable `ui`, is normally distributed with a standard deviation of $\sigma=1$. For the old tool ($t=0$), the distribution is centered around $\mu=-1$, and for the new tool it is centered around $\mu=1$. This represents that the UI of the new tool is nicer.
+- The motivation of a user, i.e., the variable `m`, is also normally distributed with $\sigma=1$. Using the new tool ($t=1$) slightly lowers the distribution mean $\mu$ by -0.5, but a nice ui improves motivation by 2.
+
+The latter specification encodes that the new tool in itself reduces motivation (e.g., because it is difficult to get used to) but users are generally motivated by a cool new UI.
+
+```{r simulation1}
+n <- 500 # number of simulated units, i.e., tool users
+
+d1 <- data.frame(
+  t = rep(c(0,1), n/2) # simulated values of t, i.e., alternating "old tool" (=0) and "new tool" (=1) assumption
+) %>% mutate(
+  ui = rnorm(n, 2*t - 1, 1), # simulated values of ui
+  m = rnorm(n, -0.5*t + 2*ui, 1) # simulated values of m
+)
+```
+
+## Analysis
+
+Ignoring our insight into how data `d` was actually produced (i.e., how strong the causal effects actually are), we can attempt an analysis to recover those effects.
+Let's simply visualize the distribution of the outcome of interest `m` for the different values of the treatment `t`.
+
+```{r viz-simple1}
+ggplot(data = d1, mapping = aes(y = m, color = as.factor(t))) +
+  geom_boxplot() + 
+  labs(y = "Motivation (m)",
+       color = "Used tool (t)") +
+  scale_color_discrete(labels=c("old tool (t=0)", "new tool (t=1)")) +
+  scale_x_discrete(labels = NULL, breaks = NULL)
+```
+
+The visualization clearly shows that using the new tool `t=1` produces a significantly higher average motivation `m`.
+Also plotting the values of the appeal of the user interface `ui` shows the strong relationship between those two variables.
+
+```{r vis-point}
+ggplot(data = d1, mapping = aes(x = ui, y = m, color = as.factor(t))) +
+  geom_point() +
+  labs(x = "Appeal of the user interface (ui)",
+       y = "Motivation (m)",
+       color = "Used tool (t)") +
+  scale_color_discrete(labels=c("old tool (t=0)", "new tool (t=1)"))
+```
+
+## Types of Effects
+
+Dealing with mediators necessitates the distinction between two types of effects:
+
+1. **Direct effect**: the immediate, isolated effect of treatment `t` on outcome `m`, $t \rightarrow m$
+2. **Total effect**: the direct effect plus all mediated effects, i.e., including $t \rightarrow ui \rightarrow m$
+
+Often, we are contempt with identifying the total effect, which does not necessitate any further differentiation.
+However, the total effect can be misleading if some relationships within the causal DAG change.
+To illustrate, consider the next example.
+
+## Re-Simulation
+
+Let's assume that we draw the following conclusion from the first analysis:
+
+> Using the new tool significantly improves the motivation of its users.
+
+Based on that, a company decides to roll out a second version of this tool to all of its users.
+Due to time reasons, the second version is much more robust (to account for the higher load of concurrent users) but this meant that little time could be invested into the appeal of the user interface.
+On average, the aforementioned causal DAG still holds, but the new data that will be generated might look very different.
+
+```{r simulation2}
+d2 <- data.frame(
+  t = rep(c(0,1), n/2) # simulated values of t, i.e., alternating "old tool" (=0) and "new tool" (=1) assumption
+) %>% mutate(
+  ui = rnorm(n, -1, 1), # simulated values of ui
+  m = rnorm(n, -0.5*t + 2*ui, 1) # simulated values of m
+)
+```
+
+The new data frame `d2` looks exactly the same with one exception: this time, the values of `ui` do not improve when using the new tool ($ui \sim \mathcal{N}(-1, 1)$ for both $t=0$ and $t=1$).
+The resulting data set looks entirely different.
+
+```{r viz-simple2}
+ggplot(data = d2, mapping = aes(y = m, color = as.factor(t))) +
+  geom_boxplot() + 
+  labs(y = "Motivation (m)",
+       color = "Used tool (t)") +
+  scale_color_discrete(labels=c("old tool (t=0)", "new tool (t=1)")) +
+  scale_x_discrete(labels = NULL, breaks = NULL)
+```
+
+Now, using the new tool causes the motivation to be slightly worse.
+This is because the total effect of `t` on `m` was only positive because of the mediation through `ui`.
+With the effect of `t` on `ui` reduced (because version 2 of the tool did not have a nicer user interface), the total effect is overall negative.

@@ -146,5 +146,4 @@ m2 <- lm(
 summary(m2)
 ```
 
-
 This time, $\beta_r \approx 0$, which reflects how the data was actually produced and is the correct causal inference here.

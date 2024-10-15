@@ -1,5 +1,5 @@
 ---
-title: "dags"
+title: "Causal DAGs"
 author: "Julian Frattini"
 date: '2024-10-15'
 output: html_document
