@@ -1,0 +1,142 @@
+---
+title: "Forks"
+author: "Julian Frattini"
+date: '2024-10-15'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# cluster of libraries for easier R syntax
+library(tidyverse)
+
+# visualization and analysis of DAGs
+library(ggdag)
+```
+
+This notebook visualizes the effect of **forks** (also called: common causes) in causal inference.
+Forks are one of the most common sources for spurious associations in causal inference and, hence, particularly dangerous to the validity of drawn conclusions.
+
+## Context
+
+Let us consider a hypothetical example of a phenomenon.
+Assume we are interested in whether the (voluntary) student attendance to lecture affects final grade.
+
+### Causal Assumptions
+
+Formally speaking, we are interested in the effect of attendance `a` on the students' performance `p`.
+We also assume that both variables are influenced by motivation `m`: more motivated students attend class more often and more motivated students also exhibit a higher performance.
+We can visualize the causal assumptions as follows.
+
+```{r dag}
+dag <- dagify(
+  p ~ a + m,
+  a ~ m,
+  exposure = "a", outcome = "p",
+  
+  labels = c(a = "attendance", p = "performance", m = "motivation"),
+  coords = list(x = c(a = 0, p = 2, m = 1), 
+                y = c(a = 0, p = 0, m = 1))
+)
+
+ggdag_status(dag, use_labels = "label", text = FALSE) +
+  guides(fill = "none", color = "none") + 
+  theme_dag()
+```
+
+This example might not reflect reality, it serves solely for demonstration purposes.
+In reality, many more variables could affect the phenomenon.
+
+### Simulation
+
+Let us simulate data, i.e., produce a data set in which we know the strength of the effects in our causal assumptions.
+Particularly, let us assume that
+
+- motivated students are more likely to attend class,
+- motivated students are strongly more likely to pass a class, but
+- attending the class reduces the likelihood of passing the class.
+
+The last effect might be due to the class not being good and rather confusing than educating students.
+We reflect this effect by simulating the value of performance as $p \sim \mathcal{N}(-0.3a+0.9m, 0.5)$, meaning that attending the class slightly lowers performance by -0.3, but motivated students perform 0.9 units better.
+
+```{r simulation}
+n <- 500 # number of simulated units, i.e., students
+
+d <- data.frame(
+  m = rbinom(n, 1, 0.5) # simulated values of m
+) %>% mutate(
+  a = rbinom(n, 1, 0.3+0.5*m) # simulated values of a, which depend on the values of m
+  ) %>% mutate(
+    p = rnorm(n, -0.3*a + 0.9*m, 0.5)
+  )
+```
+
+## Analysis
+
+Ignoring our insight into how data `d` was actually produced (i.e., how strong the causal effects actually are), we can attempt an analysis to recover those effects.
+
+### Naive Analysis
+
+If we just focus on the causal relationship of interest, $a \rightarrow p$, we might be tempted to run a simple linear regression of $p \sim a$.
+
+```{r model-naive}
+m1 <- lm(
+  formula = p ~ a,
+  data = d
+)
+
+summary(m1)
+```
+
+The model suggests that $\beta_a=\mathcal{N}(0.22, 0.06)$, i.e., attending class has a slight but strictly positive impact on the performance of a student.
+A visualization of the data supports this conclusion.
+
+```{r visualization-naive}
+ggplot(data = d,
+       mapping = aes(y = p, color = as.factor(a))) +
+  geom_boxplot() + 
+  labs(y = "Performance (p)",
+       color = "Attendance (a)") +
+  scale_color_discrete(labels=c("not attending (a=0)", "attending (a=1)")) +
+  scale_x_discrete(labels = NULL, breaks = NULL)
+```
+
+Clearly, the performance level of students attending class (`a=1`) is higher than the performance level of students not attending class (`a=0`).
+
+### Proper Analysis
+
+Knowing how the data was generated should raise concerns: we fixed the effect of attendance on performance to be negative, so why does the naive model suggest it is positive?
+This is because the data generation process contains the fork `m` which opens a non-causal backdoor path $a \leftarrow m \rightarrow p$.
+Backdoor paths must be closed, e.g., by adjusting for a fork.
+In our case, we can simply include the fork `m` in our regression model.
+
+```{r model-proper}
+m2 <- lm(
+  formula = p ~ a + m,
+  data = d
+)
+
+summary(m2)
+```
+
+Now, the model correctly identifies a negative effect of `a` on `p` and also the positive effect of `m` on `p`.
+Visualizing the data correctly (i.e., also reflecting the influence of `m`) shows this difference.
+
+```{r visualization-proper}
+motivation_names <- c(
+  `0`="unmotivated students (m=0)", 
+  `1`="motivated students (m=1)"
+)
+
+ggplot(data = d,
+       mapping = aes(y = p, color = as.factor(a))) +
+  geom_boxplot() + 
+  facet_wrap(~as.factor(m), ncol=2, labeller = as_labeller(motivation_names)) +
+  labs(y = "Performance (p)",
+       color = "Attendance (a)") +
+  scale_color_discrete(labels=c("not attending (a=0)", "attending (a=1)")) +
+  scale_x_discrete(labels = NULL, breaks = NULL)
+```
+
+The faceted visualization shows that attendance lowers the performance, but motivation greatly increases it.
