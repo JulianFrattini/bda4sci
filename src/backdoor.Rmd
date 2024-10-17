@@ -1,0 +1,192 @@
+---
+title: "Backdoor Criterion"
+author: "Julian Frattini"
+date: '2024-10-16'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# cluster of libraries for easier R syntax
+library(tidyverse)
+
+# visualization and analysis of DAGs
+library(ggdag)
+
+library(patchwork)
+```
+
+This notebook demonstrates the application of the backdoor criterion to determine an adjustment set.
+
+## Paths
+
+A *path* is a sequence of adjacent arrows that traverse any variable at most once.
+A *causal path* is a path in which all arrows point from the treatment to the outcome.
+A *non-causal path* contains at least one arrow which points in the other direction.
+A *backdoor path* is a non-causal path that enters the the treatment.
+
+### Basic Forms of Association
+
+Let's review the three basic forms of association (mediators, forks, and colliders).
+
+```{r dags-basic}
+dag.mediator <- dagify(
+  a ~ b + c,
+  c ~ b,
+  exposure = "b", outcome = "a",
+  coords = list(x = c(a = 1, b = 0, c = 0.5), 
+                y = c(a = 0, b = 0, c = 1.5))
+)
+viz.mediator <- ggdag_status(dag.mediator) + guides(fill = "none", color = "none") + theme_dag()
+
+dag.fork <- dagify(
+  a ~ b + c,
+  b ~ c,
+  exposure = "b", outcome = "a",
+  coords = list(x = c(a = 1, b = 0, c = 0.5), 
+                y = c(a = 0, b = 0, c = 1.5))
+)
+viz.fork <- ggdag_status(dag.fork) + guides(fill = "none", color = "none") + theme_dag()
+
+dag.collider <- dagify(
+  a ~ b,
+  c ~ a + b,
+  exposure = "b", outcome = "a",
+  coords = list(x = c(a = 1, b = 0, c = 0.5), 
+                y = c(a = 0, b = 0, c = 1.5))
+)
+viz.collider <- ggdag_status(dag.collider) + guides(fill = "none", color = "none") + theme_dag()
+
+viz.mediator | viz.fork | viz.collider
+```
+
+It becomes clear that the first DAG showing a mediator does not contain any non-causal paths. 
+Consequently, there is no risk of concluding spurious associations from it - only attributing impact wrongly to one or the other causal path.
+However, the two DAGs containing a fork and a collider contain a non-causal path from treatment $b$ to outcome $a$.
+Fork $b \leftarrow c \rightarrow a$ and the collider $b \rightarrow c \rightarrow a$ each contain one arrow that is not in the direction from the treatment to the outcome.
+But as we saw in the previous analyses, dealing with these non-causal paths is different for the two cases.
+We require a systematic way of deconfounding a causal effect.
+
+## The Backdoor Adjustment Formula
+
+We can systematically deconfound a causal effect by blocking every non-causal path without blockinf any causal path.
+We are looking for a set of variables Z that conform to the *backdoor criterion*:
+
+> Given an ordered pair of variables (X,Y) in a model, a set of confounder variables Z satisfies the backdoor criterion if (1) no confounder variable Z is a descendent of X and (2) Z blocks every path between X and Y that contains an arrow into X.
+
+When the causal model is a plausible representation of reality and the backdoor criterion is satisfied, then partial regression coefficients can be used as (causal) path coefficients (for linear relationships):[^1]
+
+$$P(Y|do(X))=\sum_z P(Y|X,Z=z)P(Z=z)$$
+
+We can visualize the application of the backdoor criterion to the three basic DAGs to understand its working.
+The `ggdag::ggdag_adjustment_set` function visualizes the necessary adjustment set according to the backdoor criterion.
+
+```{r adjustment-basic}
+adjust.mediator <- ggdag_adjustment_set(dag.mediator) +
+  theme(legend.position="bottom")
+
+adjust.fork <- ggdag_adjustment_set(dag.fork) +
+  theme(legend.position="bottom")
+
+adjust.collider <- ggdag_adjustment_set(dag.collider) +
+  theme(legend.position="bottom")
+ 
+adjust.mediator | adjust.fork | adjust.collider
+```
+
+Since the mediator and collider both do not contain a backdoor path (i.e., no arrow enters X), we do not need to adjust for anything.
+In other words: when estimating the causal effect of b on a, c must not be in the adjustment set because it is a descendant of b and, therefore, does not satisfy the first clause of the backdoor criterion.
+In the case of the fork, there is a backdoor path $b \leftarrow c \rightarrow a$.
+It needs to be adjusted for to estimate the effect of b on a.
+Correspondingly, we needed to control for variable c in the case of the fork.
+
+## Examples
+
+Let's consider several examples DAGs to apply the backdoor adjustment to.
+
+### Example 1
+
+In this first example, Z acts as a fork on X and Y.
+
+```{r example-1-dag}
+dag.ex.1 <- dagify(
+  Y ~ X + Z,
+  X ~ Z,
+  A ~ X + Z,
+  
+  exposure = "X", outcome = "Y",
+  coords = list(x = c(X = 0, Y = 1, Z = 0.5, A = 0), 
+                y = c(X = 0, Y = 0, Z = 1, A = 1))
+)
+ggdag_status(dag.ex.1) + 
+  guides(fill = "none", color = "none") +
+  theme_dag()
+```
+
+The path $X \leftarrow Z \rightarrow Y$ represents a non-blocked backdoor path, so we need to include Z in the adjustment set to block it.
+
+```{r example-1-adjustment}
+ggdag_adjustment_set(dag.ex.1)
+```
+
+If Z is unobservable, one might be tempted to control for A instead. However, this opens the non-causal backdoor path $X \rightarrow A \leftarrow Z \rightarrow Y$.
+
+### Example 2
+
+A commponly discussed causal DAG is the following one, often referred to as an M-bias due to its shape.
+
+```{r example-2-dag}
+dag.m.bias <- dagify(
+  Y ~ X + B,
+  X ~ A,
+  Z ~ A + B,
+  exposure = "X", outcome = "Y",
+  coords = list(x = c(X = 0, Y = 1, Z = 0.5, A = 0, B = 1), 
+                y = c(X = 0, Y = 0, Z = 0.7, A = 1, B = 1))
+)
+ggdag_status(dag.m.bias) + 
+  guides(fill = "none", color = "none") +
+  theme_dag()
+```
+
+There is only one non-causal backdoor path from X to Y, but it is not open beccause Z is a collider.
+Controlling for Z would open the path.
+
+```{r example-2-adjustment}
+ggdag_adjustment_set(dag.m.bias)
+```
+
+### Example 3
+
+This DAG is a variant of the M-bias with one additional edge $Z \rightarrow X$.
+
+```{r example-3-dag}
+dag.m.bias.2 <- dagify(
+  Y ~ X + B,
+  X ~ A + Z,
+  Z ~ A + B,
+  exposure = "X", outcome = "Y",
+  coords = list(x = c(X = 0, Y = 1, Z = 0.5, A = 0, B = 1), 
+                y = c(X = 0, Y = 0, Z = 0.5, A = 1, B = 1))
+)
+ggdag_status(dag.m.bias.2) + 
+  guides(fill = "none", color = "none") +
+  theme_dag()
+```
+
+Now, there are two backdoor paths:
+
+1. $X \leftarrow Z \leftarrow B \rightarrow Y$, and
+2. $X \leftarrow A \rightarrow Z \leftarrow B \rightarrow Y$
+
+Backdoor path 2 is not open thanks to the collider Z but backdoor path 1 must be closed.
+To close it, we could control either B or A and Z. 
+Controlling only for Z opens path 2, and controlling only for A does not close path 1.
+
+```{r example-3-adjustment}
+ggdag_adjustment_set(dag.m.bias.2) +
+  theme(legend.position="bottom")
+```
+
+[^1]: Pearl, J., & Mackenzie, D. (2018). The book of why: the new science of cause and effect. Basic books.

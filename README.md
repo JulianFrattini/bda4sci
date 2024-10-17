@@ -13,6 +13,7 @@ The repository contains the following directories and files.
   - series/ : slides for an interactive three-part series of the seminar
 - src/ : source code to follow along the examples
   - html/ : a pre-compiled version of all `Rmd` files (using `knitr`) for easier viewing
+  - `backdoor.Rmd` : explanation and demonstration of applying the backdoor criterion
   - `colliders.Rmd` : demonstration of the effect of a collider
   - `dags.Rmd` : demonstration of specifying causal directed acyclic graphs
   - `forks.Rmd` : demonstration of the effect of a fork
