@@ -66,8 +66,10 @@ n <- 500 # number of simulated units, i.e., students
 d <- data.frame(
   m = rbinom(n, 1, 0.5) # simulated values of m
 ) %>% mutate(
-  a = rbinom(n, 1, 0.3+0.5*m) # simulated values of a, which depend on the values of m
+  # simulated values of a, which depend on the values of m
+  a = rbinom(n, 1, 0.3+0.5*m) 
   ) %>% mutate(
+    # simulated values of p, which depend on both a and m
     p = rnorm(n, -0.3*a + 0.9*m, 0.5)
   )
 ```
