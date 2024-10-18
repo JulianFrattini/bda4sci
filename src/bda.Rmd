@@ -1,0 +1,181 @@
+---
+title: "Bayesian Data Analysis"
+author: "Julian Frattini"
+date: '2024-10-17'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# cluster of libraries for easier R syntax
+library(tidyverse)
+
+# visualization and analysis of DAGs
+library(ggdag)
+library(patchwork)
+
+# Bayesian modeling libraries
+library(brms)
+library(marginaleffects)
+```
+
+This notebook demonstrates the workflow of applying Bayesian data analysis for statistical causal inference.
+
+## Hypotheses
+
+Let's reuse the previous fork example to conduct a Bayesian data analysis.
+
+### Causal Assumptions
+
+Recall that we are interested in the effect of students' attendance on their performance.
+We assume that motivation affects both attendance and performance.
+
+```{r dag}
+dag <- dagify(
+  p ~ a + m,
+  a ~ m,
+  exposure = "a", outcome = "p",
+  
+  labels = c(a = "attendance", p = "performance", m = "motivation"),
+  coords = list(x = c(a = 0, p = 2, m = 1), 
+                y = c(a = 0, p = 0, m = 1))
+)
+
+ggdag_status(dag, use_labels = "label", text = FALSE) +
+  guides(fill = "none", color = "none") + 
+  theme_dag()
+```
+
+Let's produce a data set with known coefficient strengths.
+The two coefficients that affect the response variable performance `p`, i.e., $\beta_a=-0.3$ and $\beta_m=0.9$, are the target quantities that the Bayesian model will try to recover.
+
+```{r simulation}
+n <- 500 # number of simulated units, i.e., students
+
+d <- data.frame(
+  m = rbinom(n, 1, 0.5) # simulated values of m
+) %>% mutate(
+  a = rbinom(n, 1, 0.3+0.5*m) # simulated values of a, which depend on the values of m
+  ) %>% mutate(
+    p = rnorm(n, -0.3*a + 0.9*m, 0.5), # simulated values of p, which depend both on a and m
+    m = as.factor(m),
+    a = as.factor(a)
+  )
+```
+
+## Bayesian Data Analysis
+
+The Bayesian data analysis roughly consists of three steps: defining priors, fitting the regression model, and evaluating the model.
+There are many more steps like sensitivity analysis and model comparison, but these go beyond the simplest application.
+
+### Formula
+
+First, we derive a regression model from our DAG.
+This is done by applying the backdoor criterion to arrive at an adjustment set.
+
+```{r adjustment-set}
+ggdag_adjustment_set(dag)
+```
+
+The automatic application of the backdoor adjustment reminds us that we need to control m when estimating the effect of attendance a on performance p.
+This leaves us with the following formula.
+
+```{r formula}
+f <- (p ~ a + m)
+```
+
+### Priors
+
+For each predictor in the formula, we need to determine a prior probability distribution.
+The following factors require these so-called priors.
+
+```{r prior-types}
+get_prior(
+  formula = f,
+  data = d,
+  family = gaussian
+)
+```
+
+The function `brms::get_prior` shows us the default prior probability distributions.
+A prior probability distribution represents our assumptions about the effect of each factor prior to seeing the data.
+As we usually do not know the actual coefficient strengths, we need to assume a broad, _uninformative_ prior, e.g., $\mathcal{N}(0, 1)$.
+
+```{r priors}
+priors <- c(
+  prior(normal(0, 1), class = Intercept),
+  prior(normal(0, 1), class = b)
+)
+```
+
+Centering the prior around a mean $\mu=0$ with a standard deviation of $\sigma=1$ means we expect the factor to fall somewhere between [-2, 2] with a high probability.
+
+#### Prior Predictive Check
+
+To determine whether the priors are feasible, we can perform a prior predictive check, i.e., sample from the model only given the prior probability distributions, not updating with the data.
+We can enforce this via the `sample_prior="only"` argument in the `brms::brm` function.
+Make sure to create a directory called _fits_ in the _src_ directory before executing this code block.
+
+```{r model-prior}
+m.prior <-
+  brm(
+    data = d, # specify the data to train on (despite not necessary for prior predictive checks)
+    family = gaussian, # specify the distribution type of the outcome variable
+    f, # specify the regression formula
+    prior = priors, # specify the priors for each factor in the formula
+    iter = 4000, warmup = 1000, chains = 4, cores = 4,
+    seed = 4, sample_prior="only",
+    file = "fits/m.prior" # specify where to save the pre-compiled model
+  )
+```
+
+Then, we can sample draws from this fitted model to see whether the actually observed data is realistic based on our prior assumptions.
+
+```{r prior-predictive-check}
+ndraws <- 100
+brms::pp_check(m.prior, ndraws=ndraws)
+```
+
+The priors encompass the actually observed data, which means that they can be assumed to be feasible.
+
+### Model Training 
+
+Now, we execute the estimation step by updating the prior distributions based on the observed data `d`.
+This is simply done by removing the `sample_prior="only"` argument from the `brms::brm` function.
+
+```{r model}
+m <-
+  brm(data = d, family = gaussian, f, prior = priors,
+    iter = 4000, warmup = 1000, chains = 4, cores = 4,
+    seed = 4, 
+    file = "fits/m"
+  )
+```
+
+We perform a posterior predictive check to ensure that the model has learned properly.
+
+```{r posterior-predictive-check}
+brms::pp_check(m, ndraws=ndraws)
+```
+
+The distribution of draws still encompasses the actually observed data. Additionally, the distribution grew narrower around the observed data, indicating that the posterior distributions more accurately reflect the the observed data.
+
+### Model Evaluation
+
+Finally, we can evaluate the fit model.
+First, we can investigate the model summary, which contains the mean and standard deviation of every factor in the regression formula.
+
+```{r model-summary}
+summary(m)
+```
+
+The summary shows that the effects $\beta_a$ and $\beta_m$ were recovered fairly accurately.
+In addition, we can also plot the marginal effects of the individual factors.
+A marginal effect shows the influence of different values of that factor on the response variable while holding all other variables constant at representative values.
+
+```{r marginal}
+conditional_effects(m, effects=c("a", "m"))
+```
+
+These marginal plots encode the uncertainty that our model picked up better than the raw coefficients.

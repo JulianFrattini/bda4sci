@@ -13,6 +13,11 @@ The repository contains the following directories and files.
   - series/ : slides for an interactive three-part series of the seminar
 - src/ : source code to follow along the examples
   - html/ : a pre-compiled version of all `Rmd` files (using `knitr`) for easier viewing
+  - `backdoor.Rmd` : explanation and demonstration of applying the backdoor criterion
+  - `colliders.Rmd` : demonstration of the effect of a collider
+  - `dags.Rmd` : demonstration of specifying causal directed acyclic graphs
+  - `forks.Rmd` : demonstration of the effect of a fork
+  - `mediators.Rmd` : demonstration of the effect of a mediator
 
 ## System Requirements
 
@@ -27,7 +32,7 @@ Then, ensure the following steps:
     devtools::install_github("stan-dev/cmdstanr")
     cmdstanr::install_cmdstan()
 ```
-4. Install all required packages via `install.packages(c("tidyverse", "dagitty", "ggdag", "brms", "posterior", "bayesplot", "marginaleffects", "broom.mixed", "patchwork"))`.
+4. Install all required packages via `install.packages(c("tidyverse", "ggdag", "brms", "marginaleffects", "patchwork"))`.
 5. Create a folder called *fits* within *src/* such that `brms` has a location to place all Bayesian models.
 6. Open the `bda-intro.Rproj` file with RStudio which will setup the environment correctly.
 
