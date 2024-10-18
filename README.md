@@ -32,7 +32,7 @@ Then, ensure the following steps:
     devtools::install_github("stan-dev/cmdstanr")
     cmdstanr::install_cmdstan()
 ```
-4. Install all required packages via `install.packages(c("tidyverse", "dagitty", "ggdag", "brms", "posterior", "bayesplot", "marginaleffects", "broom.mixed", "patchwork"))`.
+4. Install all required packages via `install.packages(c("tidyverse", "ggdag", "brms", "marginaleffects", "patchwork"))`.
 5. Create a folder called *fits* within *src/* such that `brms` has a location to place all Bayesian models.
 6. Open the `bda-intro.Rproj` file with RStudio which will setup the environment correctly.
 
