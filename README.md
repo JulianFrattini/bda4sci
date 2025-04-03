@@ -10,14 +10,15 @@ The purpose of the seminar is to introduce software engineering researchers with
 | Version | Date | Occasion |
 |---|---|---|
 | v1.0 | 2024-10-18 | Research visit at UPC, Barcelona |
+| v2.0 | 2025-04-28 | Tutorial at the [RE'25 conference](https://conf.researchr.org/track/RE-2025/RE-2025-tutorials) |
 
 ## Structure
 
 The repository contains the following directories and files.
 
 ```
-├── version1 : material from the first version of the seminar
-│   ├── slides : slides for an interactive three-part series of the seminar
+├── version1 : material from version 1.0 of the seminar
+│   ├── slides : slides for an interactive one-part series of the seminar
 │   │   ├── bda4sci.pdf : PDF version for sharing
 │   │   └── bda4sci.pptx : PowerPoint version for presenting
 │   └── src/ : source code to follow along the examples
@@ -27,6 +28,9 @@ The repository contains the following directories and files.
 │       ├── `dags.Rmd` : demonstration of specifying causal directed acyclic graphs
 │       ├── `forks.Rmd` : demonstration of the effect of a fork
 │       └── `mediators.Rmd` : demonstration of the effect of a mediator
+├── version2 : material from version 2.0 of the seminar
+│   ├── slides : slides for an intense tutorial-style seminar
+│       └── intro-sci.pptx : PowerPoint version for presenting
 └── sci.intro.Rproj : project file to open the project in RStudio
 ```
 
