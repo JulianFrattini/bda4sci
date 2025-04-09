@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
+library(lme4)
 ```
 
 This notebook explains the fundamentals of **data set simulations**, a powerful tool to create a reliable ground truth.
@@ -16,48 +17,46 @@ This notebook explains the fundamentals of **data set simulations**, a powerful 
 ```{r}
 n <- 1000
 
-df <- data.frame(
-  remote = rep(0:1, n/2),
-  skill = runif(n, -1, 1)
-) %>% rowwise() %>% 
-  mutate(
-    lambda = max(15+skill*10, 0),
-    loc = rpois(1, lambda),
-    happy = rbinom(1, 1, min(0.5+0.3*remote, 1))
-  )
+d <- data.frame(
+  technique = rep(0:1, n/2)
+) %>% mutate(
+  defects = rnorm(n, 5 + 5*technique, 2)
+)
 ```
 
 ```{r}
-ggplot(df, aes(x=skill)) + 
-  geom_histogram(bins = 50)
+d$technique <- factor(d$technique, levels = c(0, 1), ordered = FALSE)
 ```
 
 
 ```{r}
-ggplot(df, aes(x = loc)) +
-  geom_histogram(bins = 100)
+ggplot(data = d, mapping = aes(y = technique)) +
+  geom_histogram(stat = "count")
+  
+
+ggsave(filename = "simulation-marginal-technique.png", device = "png", units = "cm", width = 10, height = 3)
 ```
 
 
 ```{r}
-df %>% 
-  ggplot(aes(x = loc, y = as.factor(remote))) +
-    geom_boxplot()
+ggplot(data = d, mapping = aes(x = defects)) +
+  geom_histogram(stat = "bin", bins = 50)
+
+
+ggsave(filename = "simulation-defects-combined.png", device = "png", units = "cm", width = 10, height = 5.5)
 ```
 
 ```{r}
-ggplot(data = df, mapping = aes(x = skill, y = loc)) +
-  geom_point() +
-  geom_smooth(method="lm")
+ggplot(data = d, mapping = aes(x = defects, fill = technique)) +
+  geom_histogram(stat = "bin", bins = 50) +
+    theme(legend.position="bottom")
+
+
+ggsave(filename = "simulation-defects-split.png", device = "png", units = "cm", width = 10, height = 7)
 ```
 
 ```{r}
-ggplot(data = df, mapping = aes(x = skill, y = as.factor(happy))) + 
-  geom_boxplot()
-```
-
-```{r}
-ggplot(data = df, mapping = aes(x = as.factor(remote), fill = as.factor(happy))) +
-  geom_histogram(stat="count")
+results <- lm(defects ~ technique, data = d)
+confint(results)
 ```
 
