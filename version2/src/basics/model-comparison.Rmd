@@ -1,0 +1,75 @@
+---
+title: "Model Comparison"
+author: "Julian Frattini"
+date: "2025-04-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(patchwork)
+```
+
+This notebook demonstrates the basics of **model comparison** in statistical causal inference (SCI), which can be used to compare the relative usability of two models.
+
+```{r}
+n <- 1000
+
+d1 <- data.frame(z = rnorm(n, 0, 1)) %>% 
+  mutate(x = rnorm(n, z, 1)) %>% 
+  mutate(y = rnorm(n, 2.5*x, 1))
+
+d2 <- data.frame(z = rnorm(n, 0, 1)) %>% 
+  mutate(x = rnorm(n, z, 1)) %>% 
+  mutate(y = rnorm(n, 2.5*x+2.5*z, 1))
+```
+
+```{r}
+result.m1.d1 <- lm(y ~ x, d1)
+result.m1.d2 <- lm(y ~ x, d2)
+
+result.m2.d1 <- lm(y ~ x + z, d1)
+result.m2.d2 <- lm(y ~ x + z, d2)
+```
+
+```{r}
+create_plot <- function(m) {
+  cis <- data.frame(confint(m))
+  cis$factor <- rownames(cis)
+  
+  plt <- cis %>% filter(factor != "(Intercept)") %>% 
+    ggplot() + 
+    geom_errorbar(aes(y=as.factor(factor), xmin = X2.5.., xmax = X97.5..)) +
+    geom_vline(xintercept = 0, color = "grey") +
+    geom_vline(xintercept = 2.5, linetype = "dashed", color = "grey") +
+    theme_bw() +
+    theme(axis.title.y = element_blank())
+  
+  return (plt)
+}
+```
+
+```{r}
+plot.m1.d1 <- create_plot(result.m1.d1)
+plot.m1.d2 <- create_plot(result.m1.d2)
+plot.m2.d1 <- create_plot(result.m2.d1)
+plot.m2.d2 <- create_plot(result.m2.d2)
+
+(plot.m1.d1 | plot.m2.d1) / (plot.m1.d2 | plot.m2.d2)
+```
+
+```{r}
+ggsave(filename="mc-m1-d1.png", plot=plot.m1.d1, device="png", path="figures", 
+       width = 5, height = 2, unit = "cm")
+ggsave(filename="mc-m1-d2.png", plot=plot.m1.d2, device="png", path="figures", 
+       width = 5, height = 2, unit = "cm")
+
+
+ggsave(filename="mc-m2-d1.png", plot=plot.m2.d1, device="png", path="figures", 
+       width = 5, height = 3, unit = "cm")
+ggsave(filename="mc-m2-d2.png", plot=plot.m2.d2, device="png", path="figures", 
+       width = 5, height = 3, unit = "cm")
+```
+

@@ -1,0 +1,42 @@
+---
+title: "Tutorial Pedagogics"
+author: "Julian Frattini"
+date: "2025-04-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+```{r}
+n <- 1000
+
+d <- data.frame(technique = rep(0:1, n/2)) %>% 
+  mutate(defects = rnorm(n, 20+technique*5, 3))
+```
+
+```{r}
+m <- lm(defects ~ technique, d)
+```
+
+```{r}
+cis <- data.frame(confint(m))
+cis$factor <- rownames(cis)
+
+cis %>% filter(factor != "(Intercept)") %>% 
+  ggplot() + 
+  geom_errorbar(aes(y=as.factor(factor), xmin = X2.5.., xmax = X97.5..)) +
+  geom_vline(xintercept = 0, color = "grey") +
+  geom_vline(xintercept = 5, linetype = "dashed", color = "grey") +
+  theme_bw() +
+  theme(axis.title.y = element_blank())
+```
+
+```{r}
+ggsave(filename="regression-ci.png", plot=plot.m1.d1, device="png", path="figures", 
+       width = 5, height = 2, unit = "cm")
+```
+
