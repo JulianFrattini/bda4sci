@@ -11,21 +11,33 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(lme4)
 library(ggdag)
+
+# utility methods for extracting coefficient distributions from two models
+source("../util/extract-coefficients.R")
 ```
 
 This notebook visualizes the effect of common causes (also called *forks* and *confounders*) in causal inference.
 Forks are one of the most common sources for spurious associations in causal inference and, hence, particularly dangerous to the validity of drawn conclusions.
 
+```{r configuration}
+varname.a <- "Specification Format" # independent variable (binary)
+varname.b <- "Lead Time" # dependent variable (continuous)
+varname.c <- "Pressure" # confounder (binary)
+
+effect.ab <- 0 # effect of interest (A -> B)
+effect.ca <- 0.5 # confounding effect of C on A
+effect.cb <- -2 # confounding effect of C on B
+```
+
 ```{r dag}
 dag <- dagify(
-  lead.time ~ specification + pressure,
-  specification ~ pressure,
-  exposure = "specification", outcome = "lead.time",
+  b ~ a + c,
+  a ~ c,
+  exposure = "a", outcome = "b",
   
-  labels = c(specification = "Specification Format", 
-             lead.time = "Lead Time", pressure = "Pressure"),
-  coords = list(x = c(specification = 0, lead.time = 2, pressure = 1), 
-                y = c(specification = 0, lead.time = 0, pressure = 1))
+  labels = c(a = varname.a, b = varname.b, c = varname.c),
+  coords = list(x = c(a = 0, b = 2, c = 1), 
+                y = c(a = 0, b = 0, c = 1))
 )
 
 ggdag_status(dag, use_labels = "label", text = FALSE) +
@@ -35,77 +47,35 @@ ggdag_status(dag, use_labels = "label", text = FALSE) +
 
 ```{r simulation}
 n <- 1000 # number of simulated units, i.e., implemented features
-effect.spec <- 0
-effect.pressure <- -2
 
-d <- data.frame(pressure = rbernoulli(n, 0.3)) %>% 
+d <- data.frame(c = rbernoulli(n, 0.3)) %>% 
   mutate(
-    specification = rbernoulli(n, 0.8-0.5*pressure),
-    lead.time = rnorm(n, effect.spec*specification + effect.pressure*pressure, 1))
+    a = rbernoulli(n, 0.8-0.5*effect.ca),
+    b = rnorm(n, effect.ab*a + effect.cb*c, 1))
 ```
 
 ```{r model-biased}
-m1 <- lm( 
-  formula = lead.time ~ specification,
-  data = d
-)
-
+m1 <- lm(formula = (b ~ a), data = d)
 summary(m1)
 ```
 
 ```{r model-controlled}
-m2 <- lm( 
-  formula = lead.time ~ specification + pressure,
-  data = d
-)
-
+m2 <- lm(formula = (b ~ a + c), data = d)
 summary(m2)
 ```
 
 ```{r}
-compare.models <- function(m1, m2, name.m1, name.m2) {
-  coefs1 <- data.frame(m = name.m1, m1$coefficients)
-  coefs1 <- cbind(factor = rownames(coefs1), coefs1) %>% 
-    rename(estimate = "m1.coefficients")
-  rownames(coefs1) <- 1:nrow(coefs1)
-  
-  coefs2 <- data.frame(m = name.m2, m2$coefficients)
-  coefs2 <- cbind(factor = rownames(coefs2), coefs2) %>% 
-    rename(estimate = "m2.coefficients")
-  rownames(coefs2) <- 1:nrow(coefs2)
-  
-  coefs <- rbind(coefs1, coefs2) %>% 
-    filter(factor != "(Intercept)")
-  
-  ci1 <- data.frame(m = name.m1, confint(m1))
-  ci1 <- cbind(factor = rownames(ci1), ci1) %>% 
-    rename(all_of(c(lower = "X2.5..", upper = "X97.5..")))
-  rownames(ci1) <- 1:nrow(ci1)
-  
-  ci2 <- data.frame(m = name.m2, confint(m2))
-  ci2 <- cbind(factor = rownames(ci2), ci2) %>% 
-    rename(all_of(c(lower = "X2.5..", upper = "X97.5..")))
-  rownames(ci2) <- 1:nrow(ci2)
-  
-  ci <- rbind(ci1, ci2) %>% 
-    filter(factor != "(Intercept)")
-  
-  return(merge(x = coefs, y = ci, by = c("m", "factor")))
-}
-```
-
-```{r}
-compare.models(m1, m2, name.m1, name.m2) %>% 
+get.coefficient.distributions(m1, m2, "Model m1 (biased)", "Model m2 (unbiased)") %>% 
   ggplot(aes(y = factor)) +
-    geom_point(aes(x = estimate)) + 
+    geom_point(aes(x = estimate)) +
     geom_errorbar(aes(xmin = lower, xmax = upper)) +
-    geom_vline(xintercept = effect.spec, 
-               linetype = "dashed", color = "cyan", size = 0.9) + 
-    geom_vline(xintercept = effect.pressure, 
-               linetype = "dashed", color = "grey", size = 0.9) + 
-    facet_wrap(vars(m), ncol=1) +
-  labs(x = "Estimated effect", y = "Factors") +
-  scale_y_discrete(labels = c("Pressure", "Specification")) +
+    geom_vline(xintercept = effect.ab,
+               linetype = "dashed", color = "cyan", size = 0.9) +
+    geom_vline(xintercept = effect.cb,
+               linetype = "dashed", color = "grey", size = 0.9) +
+    facet_wrap(vars(model), ncol=1) +
+  labs(x = paste("Estimated effect on", varname.b), y = "Factors") +
+  scale_y_discrete(labels = c(varname.c, varname.a)) +
   theme_bw()
 ```
 
