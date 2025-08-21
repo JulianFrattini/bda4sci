@@ -14,14 +14,15 @@ library(ggdag)
 
 # utility methods for extracting coefficient distributions from two models
 source("../util/extract-coefficients.R")
+figdir <- "./figures/"
 ```
 
 This notebook visualizes the effect of common effects (also called *colliders*) in causal inference.
 
 ```{r configuration}
-varname.a <- "Variable A"
-varname.b <- "Variable B"
-varname.c <- "Variable C"
+varname.a <- "Specification Size" # normally distributed independent variable
+varname.b <- "Specification Quality" # normally distributed dependent variable
+varname.c <- "Feature Success" # binary collider
 
 effect.ab <- 0
 threshold <- 0.7
@@ -53,13 +54,24 @@ d <- data.frame(a = rnorm(n, 0, 1)) %>%
   )
 ```
 
+```{r viz-effect-bc}
+ggplot(d, aes(x=b, fill=factor(c))) +
+  geom_histogram(bins = 30) +
+  labs(x = varname.b, y = "Count", fill = varname.c) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+ggsave(filename=file.path(figdir, "collider-correlation.pdf"), width=6, height=4)
+```
+
+
 ```{r model-biased}
-m2 <- lm( 
+m1 <- lm( 
   formula = b ~ a + c,
   data = d
 )
 
-summary(m2)
+summary(m1)
 ```
 
 ```{r visualization-complete}
@@ -86,18 +98,20 @@ ggplot(d, aes(x = a, y = b, color = factor(c))) +
 
 
 ```{r model-correct}
-m1 <- lm(formula = b ~ a, data = d)
-summary(m1)
+m2 <- lm(formula = b ~ a, data = d)
+summary(m2)
 ```
 ```{r visualization-coefficients}
-get.coefficient.distributions(m1, m2, "Model m1 (unbiased)", "Model m2 (biased)") %>% 
+get.coefficient.distributions(m1, m2, "Model m1 (biased)", "Model m2 (unbiased)") %>% 
   ggplot(aes(y = factor)) +
     geom_point(aes(x = estimate)) + 
     geom_errorbar(aes(xmin = lower, xmax = upper)) +
-    geom_vline(xintercept = effect.ab, linetype = "dashed", color = "cyan", size = 0.9) + 
+    geom_vline(xintercept = effect.ab, linetype = "dashed", color = "cyan", linewidth = 0.9) + 
     facet_wrap(vars(model), ncol=1) +
   labs(x = "Estimated effect", y = "Factors") +
   scale_y_discrete(labels = c(varname.a, varname.c)) +
   theme_bw()
+
+ggsave(filename=file.path(figdir, "collider-effects.pdf"), width=8, height=3)
 ```
 
