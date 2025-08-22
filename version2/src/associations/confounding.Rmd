@@ -31,7 +31,7 @@ effect.cb <- -2 # confounding effect of C on B
 
 ## Simulation
 
-Firstly, we can visualize a directed acyclic graph (DAG) representing the simluated causal relationships.
+Firstly, we can visualize a directed acyclic graph (DAG) representing the simulated causal relationships.
 The confounder is a common cause of both the treatment and the outcome.
 
 ```{r dag}

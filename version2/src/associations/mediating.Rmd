@@ -19,14 +19,19 @@ source("../util/extract-coefficients.R")
 This notebook visualizes the effect of a mediator (also called *pipe*) in causal inference.
 
 ```{r configuration}
-varname.a <- "Variable A" # independent variable (binary)
-varname.b <- "Variable B" # dependent variable (continuous)
-varname.c <- "Variable C" # mediator (continuous)
+varname.a <- "Technique" # independent variable (binary)
+varname.b <- "Tool Appeal" # dependent variable (continuous)
+varname.c <- "Productivity" # mediator (continuous)
 
 effect.ab <- 0.5
-effect.ac <- 1
+effect.ac <- -1
 effect.cb <- 2
 ```
+
+## Simulation
+
+Firstly, we can visualize a directed acyclic graph (DAG) representing the simulated causal relationships.
+The mediator is caused by the cause and also affects the outcome.
 
 ```{r dag}
 dag <- dagify(
@@ -44,6 +49,9 @@ ggdag_status(dag, use_labels = "label", text = FALSE) +
   theme_dag()
 ```
 
+Based on these causal assumptions, we can simulate a data set with $n$ observations.
+The causal relationships impact the distributions of the variables.
+
 ```{r simulation}
 n <- 1000
 
@@ -54,20 +62,13 @@ d <- data.frame(a = rbinom(n, 1, 0.5)) %>%
   )
 ```
 
+## Data Analysis
+
+Based on these simulations, we can train two regression models: one estimating the total effect (`m1`) and one estimating the direct and indirect effect (`m2`).
+
 ```{r model-total}
 m1 <- lm(formula = (b ~ a), data = d)
 summary(m1)
-```
-
-```{r}
-ggplot(d, aes(x = b, y = factor(a))) +
-  geom_boxplot()
-```
-
-```{r}
-ggplot(d, aes(x = c, y = b, color = factor(a))) +
-  geom_point() + 
-  geom_smooth(formula = (y ~ x), method = "lm")
 ```
 
 ```{r model-direct}
@@ -75,17 +76,53 @@ m2 <- lm(formula = b ~ a + c, data = d)
 summary(m2)
 ```
 
-```{r visualization-coefficients}
+Additionally, we can also esimate the effect of the cause on the mediator.
+
+```{r model-mediator}
+m3 <- lm(formula = c ~ a, data = d)
+```
+
+## Visualizations
+
+The comparison of `m1` and `m2` show that both models determine the "correct" effect, but `m1` only identifies the total effect while `m2` can differentiate the direct from the indirect effect.
+
+```{r visualize-coefficients}
 get.coefficient.distributions(m1, m2, "Model m1 (total)", "Model m2 (differentiated)") %>% 
   ggplot(aes(y = factor)) +
     geom_point(aes(x = estimate)) + 
     geom_errorbar(aes(xmin = lower, xmax = upper)) +
     geom_vline(xintercept = effect.ab + effect.ac*effect.cb, 
-               linetype = "dashed", color = "cyan", size = 0.9) + 
-    geom_vline(xintercept = effect.ab, linetype = "dashed", color = "grey", size = 0.9) + 
-    geom_vline(xintercept = effect.ac*effect.cb, linetype = "dashed", color = "grey", size = 0.9) + 
+               linetype = "dashed", color = "cyan", linewidth = 0.9) + 
+    geom_vline(xintercept = effect.ab, 
+               linetype = "dashed", color = "grey", linewidth = 0.9) + 
+    geom_vline(xintercept = effect.cb, 
+               linetype = "dashed", color = "grey", linewidth = 0.9) + 
     facet_wrap(vars(model), ncol=1) +
   labs(x = "Estimated effect", y = "Factors") +
   scale_y_discrete(labels = c(varname.a, varname.c)) +
   theme_bw()
+
+ggsave(filename = "figures/mediating-effects.pdf", 
+       device = "pdf", width = 4, height = 2)
 ```
+
+```{r visualize-mediator}
+get.coefficient.distributions(m2, m3, "Model m2 (differentiated)", "Model m3 (mediator)") %>% 
+  ggplot(aes(y = factor)) +
+    geom_point(aes(x = estimate)) + 
+    geom_errorbar(aes(xmin = lower, xmax = upper)) +
+    geom_vline(xintercept = effect.ac, 
+               linetype = "dashed", color = "grey", linewidth = 0.9) + 
+    geom_vline(xintercept = effect.ab, 
+               linetype = "dashed", color = "grey", linewidth = 0.9) + 
+    geom_vline(xintercept = effect.cb, 
+               linetype = "dashed", color = "grey", linewidth = 0.9) + 
+    facet_wrap(vars(model), ncol=1) +
+  labs(x = "Estimated effect", y = "Factors") +
+  scale_y_discrete(labels = c(varname.a, varname.c)) +
+  theme_bw()
+
+ggsave(filename = "figures/mediating-effects-mediator.pdf", 
+       device = "pdf", width = 4, height = 2)
+```
+
