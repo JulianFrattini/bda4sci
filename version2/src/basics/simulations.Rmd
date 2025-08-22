@@ -83,7 +83,8 @@ This effect can also be confirmed analytically using a regression model.
 Under the assumption that `technique` influences `defects`, we can regress the latter on the former.
 
 ```{r regression}
-results <- lm(defects ~ technique, data = d)
+results <- lm(defects ~ 1 + technique, data = d)
+results
 confint(results)
 ```
 
@@ -99,7 +100,7 @@ cbind(factor = rownames(cis), cis) %>%
   ggplot(aes(y = TRUE)) +
     geom_errorbar(aes(xmin = lower, xmax = upper)) +
     geom_vline(xintercept = effect.strength, 
-               color="cyan", size = 1.5) +
+               color="cyan", linewidth = 1.5) +
     xlim(0, 6) + 
     labs(x = "Estimated (and simulated) effect strength") +
     theme_bw() +
