@@ -1,0 +1,141 @@
+---
+title: "Confounding"
+author: "Julian Frattini"
+date: "2025-07-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lme4)
+library(ggdag)
+
+# utility methods for extracting coefficient distributions from two models
+source("../util/extract-coefficients.R")
+```
+
+This notebook visualizes the effect of common causes (also called *forks* and *confounders*) in causal inference.
+Forks are one of the most common sources for spurious associations in causal inference and, hence, particularly dangerous to the validity of drawn conclusions.
+
+```{r configuration}
+varname.a <- "Specification Format" # independent variable (binary)
+varname.b <- "Lead Time" # dependent variable (continuous)
+varname.c <- "Pressure" # confounder (binary)
+
+effect.ab <- 0 # effect of interest (A -> B)
+effect.ca <- 0.5 # confounding effect of C on A
+effect.cb <- -2 # confounding effect of C on B
+```
+
+## Simulation
+
+Firstly, we can visualize a directed acyclic graph (DAG) representing the simulated causal relationships.
+The confounder is a common cause of both the treatment and the outcome.
+
+```{r dag}
+dag <- dagify(
+  b ~ a + c,
+  a ~ c,
+  exposure = "a", outcome = "b",
+  
+  labels = c(a = varname.a, b = varname.b, c = varname.c),
+  coords = list(x = c(a = 0, b = 2, c = 1), 
+                y = c(a = 0, b = 0, c = 1))
+)
+
+ggdag_status(dag, use_labels = "label", text = FALSE) +
+  guides(fill = "none", color = "none") + 
+  theme_dag()
+```
+
+Based on these causal assumptions, we can simulate a data set with $n$ observations.
+The confounder is drawn randomly, while both the cause and the effect of the phenomenon of interest are impacted by it.
+
+```{r simulation}
+n <- 1000 # number of simulated units, i.e., implemented features
+
+d <- data.frame(c = rbernoulli(n, 0.3)) %>% 
+  mutate(
+    a = rbernoulli(n, 0.8-effect.ca*c),
+    b = rnorm(n, effect.ab*a + effect.cb*c, 1))
+```
+
+## Data Analysis
+
+A naive analysis would regress the outcome on the treatment alone.
+The summary shows that the estimated effect of the treatment on the outcome is far off the actual effect as simulated in the ground truth.
+
+```{r model-biased}
+m1 <- lm(formula = (b ~ a), data = d)
+summary(m1)
+```
+
+In a scientifically correct approach, the regression analysis statistically controls for the confounder.
+
+```{r model-controlled}
+m2 <- lm(formula = (b ~ a + c), data = d)
+summary(m2)
+```
+
+A comparison of the coefficients that the two models estimate show how model `m1` is biased while model `m2` identifies the effects correctly.
+
+```{r}
+get.coefficient.distributions(m1, m2, "Model m1 (biased)", "Model m2 (unbiased)")
+```
+
+
+```{r coefficient-comparison}
+get.coefficient.distributions(m1, m2, "Model m1 (biased)", "Model m2 (unbiased)") %>% 
+  mutate(factor = ifelse(factor == "aTRUE", varname.a, varname.c)) %>% 
+  ggplot(aes(y = factor)) +
+    geom_point(aes(x = estimate)) +
+    geom_errorbar(aes(xmin = lower, xmax = upper)) +
+    geom_vline(xintercept = effect.ab,
+               linetype = "dashed", color = "cyan", linewidth = 0.9) +
+    geom_vline(xintercept = effect.cb,
+               linetype = "dashed", color = "grey", linewidth = 0.9) +
+    facet_wrap(vars(model), ncol=1) +
+  labs(x = paste("Estimated effect on", varname.b), y = "Factors") +
+  theme_bw()
+```
+
+When an effect of interest is confounded by a common cause, the statistical model needs to adjust for it by involving it as a regressor.
+
+```{r export-figure}
+ggsave(filename = "figures/confounding-effects.pdf", 
+       device = "pdf", width = 4, height = 2)
+```
+
+### Data Visualization
+
+Visualizing the raw data further clarifies how the bias in the estimation emerged.
+
+```{r visualize-naive}
+d %>% 
+  mutate(a = ifelse(a == 0, paste(varname.a, "= 0"), paste(varname.a, "= 1"))) %>% 
+  ggplot(aes(x = a, y = b)) +
+    geom_boxplot() +
+    labs(x = element_blank(), y = paste("Estimated effect on", varname.b)) +
+    theme_bw()
+
+ggsave(filename = "figures/confounding-data-naive.pdf", 
+       device = "pdf", width = 4, height = 4)
+```
+
+```{r visualize-split}
+d %>% 
+  mutate(
+    a = ifelse(a == 0, paste(varname.a, "= 0"), paste(varname.a, "= 1")),
+    c = ifelse(c == 0, paste(varname.c, "= 0"), paste(varname.c, "= 1"))
+  ) %>% 
+  ggplot(aes(x = a, y = b)) +
+    geom_boxplot() +
+    facet_wrap(~c, nrow = 1, ncol = 2) +
+    labs(x = element_blank(), y = paste("Estimated effect on", varname.b)) +
+    theme_bw()
+
+ggsave(filename = "figures/confounding-data-split.pdf", 
+       device = "pdf", width = 8, height = 4)
+```

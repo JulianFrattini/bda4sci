@@ -1,0 +1,117 @@
+---
+title: "Simulations"
+author: "Julian Frattini"
+date: '2025-04-08'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lme4)
+```
+
+This notebook explains the fundamentals of **data set simulations**, a powerful tool to create a reliable ground truth.
+As a running example, we consider studying the effect of a novel `technique` on the number of found `defects`.
+
+## Dataset Simulation
+
+We simulate a data set by drawing randomly from certain distributions (e.g., `stats::rnorm` to draw from a normal distribution or `stats::rpois` from a Poisson distribution).
+Independent variables simply sample randomly from a distribution.
+Dependent variables sample from a distribution where one of the parameters is affected by an independent variable.
+
+```{r simulation}
+n <- 1000
+effect.strength <- 5
+
+d <- data.frame(
+  technique = rep(0:1, n/2) # simulation of an independent variable
+) %>% mutate(
+  defects = rpois(n, 10 + effect.strength*technique), # simulation of a dependent variable
+  technique = factor(technique, levels = c(0, 1), ordered = FALSE)
+)
+```
+
+## Visualization
+
+To confirm, we can plot the distribution of the simulated variables
+
+```{r viz-independent}
+ggplot(data = d, mapping = aes(y = technique, fill = technique)) +
+  geom_histogram(stat = "count") +
+  labs(x = "Number of observations", y = element_blank(), fill = "Technique") +
+  scale_fill_discrete(labels=c("Baseline (0)", "Treatment (1)")) + 
+  theme_bw() +
+  theme(axis.ticks.y = element_blank(), legend.position = "bottom")
+  
+ggsave(filename = "simulation-marginal-technique.png", 
+       device = "png", units = "cm", width = 10, height = 5)
+```
+
+Next, we can visualize the distribution of the dependent variable.
+If we visualize the dependent variable as is, the resulting distribution may be interpreted to stem from a single population.
+
+```{r viz-dependent-combined}
+ggplot(data = d, mapping = aes(x = defects)) +
+  geom_histogram(stat = "bin", bins = 25) +
+  labs(x = "Number of detected defects", y = "Occurrences") + 
+  theme_bw()
+
+ggsave(filename = "simulation-defects-combined.png", 
+       device = "png", units = "cm", width = 10, height = 5.5)
+```
+
+However, if we stratify the distribution by the independent variable `technique` we see that the response variable stems from two populations.
+One has its mean at 10, the other at 15.
+
+```{r viz-dependent-stratified}
+ggplot(data = d, mapping = aes(x = defects, fill = technique)) +
+  geom_histogram(stat = "bin", bins = 25) + 
+  labs(x = "Number of detected defects", y = "Occurrences", fill = "Technique") + 
+  scale_fill_discrete(labels=c("Baseline (0)", "Treatment (1)")) + 
+  theme_bw() +
+  theme(legend.position="bottom")
+
+ggsave(filename = "simulation-defects-split.png", 
+       device = "png", units = "cm", width = 10, height = 7)
+```
+
+## Analysis
+
+This effect can also be confirmed analytically using a regression model.
+Under the assumption that `technique` influences `defects`, we can regress the latter on the former.
+
+```{r regression}
+results <- lm(defects ~ 1 + technique, data = d)
+results
+confint(results)
+```
+
+The confidence interval of the effect that the `technique` has on the number of detected `defects` (`technique1`) covers the simulated effect.
+We can also visualize this overlap.
+
+```{r confidence-interval}
+cis <- data.frame(confint(results)) %>% 
+  rename(all_of(c(lower = "X2.5..", upper = "X97.5.."))) 
+
+cbind(factor = rownames(cis), cis) %>% 
+  filter(factor == "technique1") %>% 
+  ggplot(aes(y = TRUE)) +
+    geom_errorbar(aes(xmin = lower, xmax = upper)) +
+    geom_vline(xintercept = effect.strength, 
+               color="cyan", linewidth = 1.5) +
+    xlim(0, 6) + 
+    labs(x = "Estimated (and simulated) effect strength") +
+    theme_bw() +
+    theme(axis.title.y = element_blank(), 
+          axis.ticks.y = element_blank(),
+          axis.text.y = element_blank())
+
+ggsave(filename = "regression.png", 
+       device = "png", units = "cm", width = 8, height = 3)
+```
+
+The overlap of confidence interval with the simulated ground truth acts as evidence that our statistical model succeeds in revealing the actual effect of interest.
+It is worth noting, however, that the analysis makes some questionable assumptions (e.g., `lme4::lm` conducts a linear regression assuming normal distribution, yet the dependent variable follows a Poisson distribution).
+

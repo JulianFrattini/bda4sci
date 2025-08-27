@@ -1,0 +1,139 @@
+---
+title: "Colliding"
+author: "Julian Frattini"
+date: "2025-07-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lme4)
+library(ggdag)
+
+# utility methods for extracting coefficient distributions from two models
+source("../util/extract-coefficients.R")
+figdir <- "./figures/"
+```
+
+This notebook visualizes the effect of common effects (also called *colliders*) in causal inference.
+
+```{r configuration}
+varname.a <- "Specification Size" # normally distributed independent variable
+varname.b <- "Specification Quality" # normally distributed dependent variable
+varname.c <- "Feature Success" # binary collider
+
+effect.ab <- 0
+threshold <- 0.7
+```
+
+## Simulation
+
+
+Firstly, we can visualize a directed acyclic graph (DAG) representing the simulated causal relationships.
+The collider is affected by both the cause and the effect.
+
+```{r dag}
+dag <- dagify(
+  b ~ a , # (assumed) causal effect of the independent on the dependent variable
+  c ~ a + b, # colliding effect of both these variables on a third variable
+  exposure = "a", outcome = "b",
+  
+  labels = c(a = varname.a, b = varname.b, c = varname.c),
+  coords = list(x = c(a = 0, b = 2, c = 1), 
+                y = c(a = 1, b = 1, c = 0))
+)
+
+ggdag_status(dag, use_labels = "label", text = FALSE) +
+  guides(fill = "none", color = "none") + 
+  theme_dag()
+```
+Based on these causal assumptions, we can simulate a data set with $n$ observations.
+The causal relationships impact the distributions of the variables.
+
+```{r simulation}
+n <- 1000
+
+d <- data.frame(a = rnorm(n, 0, 1)) %>% 
+  mutate(
+    b = rnorm(n, 0 + effect.ab*a, 1),
+    c = (a + b > threshold)
+  )
+```
+
+The correlation between the effect b and the collider c can be visualized in a histogram to confirm that there is an information transfer.
+
+```{r viz-effect-bc}
+ggplot(d, aes(x=b, fill=factor(c))) +
+  geom_histogram(bins = 30) +
+  labs(x = varname.b, y = "Count", fill = varname.c) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+ggsave(filename=file.path(figdir, "collider-correlation.pdf"), width=6, height=4)
+```
+
+## Data Analysis
+
+Based on these simulations, we can train two regression models: one including the collider `c` as a predictor and one excluding it.
+
+```{r model-biased}
+m1 <- lm( 
+  formula = b ~ a + c,
+  data = d
+)
+
+summary(m1)
+```
+
+The model summary shows an effect of `a` on `b` that deviates strongly from the simulation.
+If we plot the two variables against each other we do see that the effect should be different.
+
+```{r visualization-complete}
+ggplot(d, aes(x = a, y = b)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "grey") +
+  geom_vline(xintercept = 0, color = "grey") +
+  geom_smooth(formula = (y ~ x), method = 'lm') + 
+  labs(x = varname.a, y = varname.b) +
+  theme_bw()
+```
+
+However, if we additionally stratify by the collider, we see that in both strata separately the two variables are correlated as the model understood it.
+
+```{r visualization stratified}
+ggplot(d, aes(x = a, y = b, color = factor(c))) +
+  geom_point() +
+  geom_smooth(formula = (y ~ x), method = 'lm') + 
+  geom_abline(intercept = threshold, slope = -1, linetype = "dashed") + 
+  geom_hline(yintercept = 0, color = "grey") +
+  geom_vline(xintercept = 0, color = "grey") +
+  labs(x = varname.a, y = varname.b, color = varname.c) + 
+  theme_bw()
+```
+
+On the other hand, when training a model without the collider as a predictor, the estimation of the impact of `a` on `b` is closer to the ground truth value.
+
+```{r model-correct}
+m2 <- lm(formula = b ~ a, data = d)
+summary(m2)
+```
+
+A visual comparison of the posterior coefficient distribution of the two models emphasizes the difference.
+
+```{r visualization-coefficients}
+get.coefficient.distributions(m1, m2, "Model m1 (biased)", "Model m2 (unbiased)") %>% 
+  ggplot(aes(y = factor)) +
+    geom_point(aes(x = estimate)) + 
+    geom_errorbar(aes(xmin = lower, xmax = upper)) +
+    geom_vline(xintercept = effect.ab, linetype = "dashed", color = "cyan", linewidth = 0.9) + 
+    facet_wrap(vars(model), ncol=1) +
+  labs(x = "Estimated effect", y = "Factors") +
+  scale_y_discrete(labels = c(varname.a, varname.c)) +
+  theme_bw()
+
+ggsave(filename=file.path(figdir, "collider-effects.pdf"), width=8, height=3)
+```
+
+This is an instance of Berkson's paradox: conditioning on a collider will bias the results.
