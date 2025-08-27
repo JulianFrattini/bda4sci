@@ -1,0 +1,41 @@
+---
+title: "D-Separation Exercises"
+author: "Julian Frattini"
+date: "2025-04-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(patchwork)
+# visualization and analysis of DAGs
+library(ggdag)
+```
+
+This notebook contains some examples of applying d-separation and the backdoor criterion to derive an unbiased statistical model from a causal model.
+
+### Example 3
+
+This DAG is a variant of the M-bias with one additional edge $Z \rightarrow X$.
+
+```{r example-4-dag}
+dag4 <- dagify(
+  b ~ a,
+  a ~ d,
+  c ~ a + b + d,
+  exposure = "a", outcome = "b",
+  #latent = c("c"),
+  coords = list(x = c(a = 0, b = 1, c = 0.5, d = 0), 
+                y = c(a = 0, b = 0, c = 0.5, d = 1))
+)
+ggdag_status(dag4) + 
+  guides(fill = "none", color = "none") +
+  theme_dag()
+```
+
+```{r example-3-adjustment}
+ggdag_adjustment_set(dag4) +
+  theme(legend.position="bottom")
+```
