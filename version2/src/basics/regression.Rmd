@@ -1,5 +1,5 @@
 ---
-title: "Tutorial Pedagogics"
+title: "Tutorial Pedagogics: Regression"
 author: "Julian Frattini"
 date: "2025-04-29"
 output: html_document
@@ -11,18 +11,45 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 ```
 
-```{r}
+This notebook introduces the fundamentals of regression analysis as a tool for quantitative data analysis.
+
+## Simulation
+
+First, we generate an artificial data set with a clear effect of a treatment (`technique`) on an outcome (`leadtime`).
+
+```{r simulate-data}
+# number of data points
 n <- 1000
 
+# simulated data (with a causal effect of technique -> leadtime)
 d <- data.frame(technique = rep(0:1, n/2)) %>% 
-  mutate(defects = rnorm(n, 20+technique*5, 3))
+  mutate(leadtime = rnorm(n, 10+technique*5, 3))
 ```
 
-```{r}
-m <- lm(defects ~ technique, d)
+A visualization of the distribution of the data clearly indicates this effect.
+
+```{r visualize-data}
+ggplot(d, aes(x = as.factor(technique), y = leadtime)) +
+  geom_boxplot() +
+  labs(x = "lead time", y = "technique") +
+  theme_bw()
+
+ggsave(filename="regression-data.pdf", device="pdf", path="figures", 
+       width = 2, height = 4)
 ```
 
-```{r}
+## Analysis
+
+Given the simulated data, we can train a simple linear regression model that picks up the effect.
+
+```{r train-model}
+m <- lm(leadtime ~ technique, d)
+summary(m)
+```
+
+Plotting the estimated confidence interval of the coefficient against the true, simulated effect shows how the model estimated the effect.
+
+```{r visualize-coefficient}
 cis <- data.frame(confint(m))
 cis$factor <- rownames(cis)
 
@@ -31,12 +58,10 @@ cis %>% filter(factor != "(Intercept)") %>%
   geom_errorbar(aes(y=as.factor(factor), xmin = X2.5.., xmax = X97.5..)) +
   geom_vline(xintercept = 0, color = "grey") +
   geom_vline(xintercept = 5, linetype = "dashed", color = "grey") +
+  labs(x = "Estimated effect on lead time") +
   theme_bw() +
   theme(axis.title.y = element_blank())
-```
 
-```{r}
-ggsave(filename="regression-ci.png", plot=plot.m1.d1, device="png", path="figures", 
-       width = 5, height = 2, unit = "cm")
+ggsave(filename="regression-ci.pdf", device="pdf", path="figures", 
+       width = 5, height = 2)
 ```
-
