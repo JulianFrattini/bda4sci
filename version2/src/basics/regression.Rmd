@@ -44,7 +44,7 @@ Given the simulated data, we can train a simple linear regression model that pic
 
 ```{r train-model}
 m <- lm(leadtime ~ technique, d)
-summary(m)
+m
 ```
 
 Plotting the estimated confidence interval of the coefficient against the true, simulated effect shows how the model estimated the effect.
