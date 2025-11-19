@@ -1,0 +1,67 @@
+---
+title: "Tutorial Pedagogics: Regression"
+author: "Julian Frattini"
+date: "2025-04-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+This notebook introduces the fundamentals of regression analysis as a tool for quantitative data analysis.
+
+## Simulation
+
+First, we generate an artificial data set with a clear effect of a treatment (`technique`) on an outcome (`leadtime`).
+
+```{r simulate-data}
+# number of data points
+n <- 1000
+
+# simulated data (with a causal effect of technique -> leadtime)
+d <- data.frame(technique = rep(0:1, n/2)) %>% 
+  mutate(leadtime = rnorm(n, 10+technique*5, 3))
+```
+
+A visualization of the distribution of the data clearly indicates this effect.
+
+```{r visualize-data}
+ggplot(d, aes(x = as.factor(technique), y = leadtime)) +
+  geom_boxplot() +
+  labs(x = "lead time", y = "technique") +
+  theme_bw()
+
+ggsave(filename="regression-data.pdf", device="pdf", path="figures", 
+       width = 2, height = 4)
+```
+
+## Analysis
+
+Given the simulated data, we can train a simple linear regression model that picks up the effect.
+
+```{r train-model}
+m <- lm(leadtime ~ technique, d)
+m
+```
+
+Plotting the estimated confidence interval of the coefficient against the true, simulated effect shows how the model estimated the effect.
+
+```{r visualize-coefficient}
+cis <- data.frame(confint(m))
+cis$factor <- rownames(cis)
+
+cis %>% filter(factor != "(Intercept)") %>% 
+  ggplot() + 
+  geom_errorbar(aes(y=as.factor(factor), xmin = X2.5.., xmax = X97.5..)) +
+  geom_vline(xintercept = 0, color = "grey") +
+  geom_vline(xintercept = 5, linetype = "dashed", color = "grey") +
+  labs(x = "Estimated effect on lead time") +
+  theme_bw() +
+  theme(axis.title.y = element_blank())
+
+ggsave(filename="regression-ci.pdf", device="pdf", path="figures", 
+       width = 5, height = 2)
+```

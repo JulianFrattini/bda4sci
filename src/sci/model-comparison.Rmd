@@ -1,0 +1,94 @@
+---
+title: "Model Comparison"
+author: "Julian Frattini"
+date: "2025-04-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(patchwork)
+```
+
+This notebook demonstrates the basics of **model comparison** in statistical causal inference (SCI), which can be used to compare the relative usability of two models.
+
+## Simulation
+
+We simulate $n$ samples from two different causal models involving the variables x, y, and z: $d_1$ which does not include a confounder, $d_2$ does.
+
+```{r simulate-data}
+n <- 1000
+variance <- 1.5
+
+# simulate data for a causal model without a confounder (x -> y and z -> y)
+d1 <- data.frame(z = rnorm(n, 0, variance)) %>% 
+  mutate(x = rnorm(n, 0, variance)) %>% # the cause is independent of any variable
+  mutate(y = rnorm(n, x+z, variance))
+
+# simulate data for a causal model with a confounder (x -> y and x <- z -> y)
+d2 <- data.frame(z = rnorm(n, 0, variance)) %>% 
+  mutate(x = rnorm(n, z, variance)) %>% # the cause depends on the confounder
+  mutate(y = rnorm(n, x+z, variance))
+```
+
+## Data Analysis
+
+Next, we compare two regression models regarding attempting statistical causal inference. Model $m_1$ regresses the effect only on the cause ($y \sim x$) while $m_2$ additionally conditions on the additional variable `z` ($y \sim x + z$).
+
+```{r train-models}
+result.m1.d1 <- lm(y ~ x, d1)
+result.m1.d2 <- lm(y ~ x, d2)
+
+result.m2.d1 <- lm(y ~ x + z, d1)
+result.m2.d2 <- lm(y ~ x + z, d2)
+```
+
+We visualize the inferred effect strengths of all included regressors for both models on both data sets individually.
+
+```{r create-plot}
+create_plot <- function(m) {
+  cis <- data.frame(confint(m))
+  cis$factor <- rownames(cis)
+  
+  plt <- cis %>% filter(factor != "(Intercept)") %>% 
+    ggplot() + 
+    geom_errorbar(aes(y=as.factor(factor), xmin = X2.5.., xmax = X97.5..)) +
+    geom_vline(xintercept = 0, color = "grey") +
+    #geom_vline(xintercept = 1, linetype = "dashed", color = "grey") +
+    xlim(0, 2) +
+    theme_bw() +
+    theme(axis.title.y = element_blank())
+  
+  return (plt)
+}
+```
+
+## Results
+
+Finally, we compare the two analyses per data set visually.
+
+```{r assemble-plots}
+plot.m1.d1 <- create_plot(result.m1.d1)
+plot.m1.d2 <- create_plot(result.m1.d2)
+plot.m2.d1 <- create_plot(result.m2.d1)
+plot.m2.d2 <- create_plot(result.m2.d2)
+
+plot.total <- (plot.m1.d1 | plot.m1.d2) / (plot.m2.d1 | plot.m2.d2)
+```
+
+The following 2-by-2 grid shows the two analysis models (in the rows) on the two data sets (in the columns).
+
+```{r show-plot}
+plot.total
+ggsave(filename="model-comparison.pdf", plot=plot.total, device="pdf", path="figures", 
+       width = 5, height = 2)
+```
+
+Even without knowing the ground truth, we can infer which model was more appropriate for each data set:
+
+- In the first column ($d_1$, without confounder) the inclusion of `z` as a regressor does not change the estimated effect of `x` on `y`. Confounding is unlikely. However, the confidence interval of said effect shrinks, indicating that `z` may improve the precision of the estimation. The most likely causal model is {x -> y; z -> y}.
+- In hte second column ($d_2$, with confounder) the inclusion of `z` as a regressor shifts the estimated effect of `x` on `y`. The effect is likely confounded and the most likely causal model is {x -> y, x <- z -> y}.
+
+This demonstrates how model comparison can be used to determine, which causal model is more *useful* in the sense that it reflects the actual data generation process better.

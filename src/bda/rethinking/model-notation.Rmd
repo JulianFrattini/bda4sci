@@ -1,0 +1,81 @@
+---
+title: "Bayesian Model Notation"
+author: "Julian Frattini"
+date: "2025-09-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rethinking)
+library(patchwork)
+```
+
+This notebook introduces the basics of inferring from data using Bayesian modeling techniques.
+
+```{r load-data}
+data("Howell1")
+d <- Howell1
+
+# filter out all data points with age below 18
+d2 <- d[ d$age >= 18 , ]
+# determine the average weight of the remaining samples
+wbar <- mean(d2$weight)
+```
+
+```{r}
+r1 <- seq(0, 1, length=100)
+r2 <- seq(0, 30)
+plot(r1, dnorm(r1, 0.5, 0.1), type="l")
+plot(r2, dlnorm(r2, 4, 1.5), type="l")
+plot(r1, dbeta(r1, 2, 5), type="l")
+plot(r2, dpois(r2, 5), type="h")
+```
+
+
+```{r train-model}
+m <- quap(
+  alist(
+    height ~ dnorm( mu , sigma ) ,
+    mu <- a + b*( weight - wbar ) ,
+    a ~ dnorm( 178 , 20 ) ,
+    b ~ dlnorm( 0 , 1 ) ,
+    sigma ~ dunif( 0 , 50 )
+  ), 
+  data=d2 
+)
+```
+
+```{r inspect-posterior}
+precis(m)
+```
+
+
+```{r sample-posterior}
+post <- extract.samples( m )
+str(post)
+```
+
+```{r predict-values}
+y <- rnorm( 1e5 , post$a + post$b*( 46.95 - wbar ) , post$sigma )
+mean(y)
+PI(y,prob=0.89)
+```
+
+```{r predict-all}
+f <- function( weight ) {
+  y <- rnorm( 1e5 , post$a + post$b*( weight - wbar ) , post$sigma )
+  return( c( mean(y) , PI(y,prob=0.89) ) )
+}
+
+weight_list <- c(46.95,43.72,64.78,32.59,54.63)
+result <- sapply( weight_list , f )
+```
+
+```{r tabulate-results}
+rtab <- cbind( weight_list , t( result ) )
+colnames(rtab) <- c("weight","height","5%","94%")
+rtab
+```
+

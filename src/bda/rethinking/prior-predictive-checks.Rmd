@@ -1,0 +1,111 @@
+---
+title: "Prior Predictive Checks with rethinking"
+author: "Julian Frattini"
+date: "2025-09-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rethinking)
+library(tidyverse)
+library(patchwork)
+```
+
+This notebook demonstrates prior predictive checks with the `rethinking` package.
+
+## Data
+
+For demonstration, we can use the `rethinking::data("Howell1")` data, which contains "demographic data from the Kalahari !Kung San people collected by Nancy Howell" (see `vignette(Howell1)`).
+For this simple problem, we focus on the subset of data points from adults (`age >= 18`).
+
+```{r load-data}
+data("Howell1")
+d <- Howell1 %>% 
+  filter(age >= 18)
+```
+
+For a better understanding of the data, we can visualize it in a simple scatterplot.
+The relationship between `weight` (measured in kg) and `height` (measured in cm) is clearly positive.
+
+```{r visualize-data}
+ggplot(d, aes(x = weight, y = height)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = (y ~ x), se = FALSE, color = "grey") +
+  labs(x = "Weight in kg", y = "Height in cm") +
+  theme_bw()
+```
+
+## Prior Predictive Check
+
+To model the height in relation to the weight, we have two options:
+
+1. $height \sim \alpha + \beta*weight$, i.e., height is modeled by weight
+2. $height \sim \alpha + \beta*(weight - \overline{weight})$, i.e., height is modeled by *weight deviation from the mean* $\overline{weight}$
+
+The second option is preferable because here $\alpha$ represents the average height of a person with average weight.
+In the first option, $\alpha$ would be the height of a person with weight = 0kg.
+It is easier to pick priors for the former.
+
+```{r calculate-average}
+avg.weight = mean(d$weight)
+```
+
+### Choosing Priors
+
+Richard McElreath proposes two different sets of priors[^1] which differ in their parameters for $\beta$.
+In `priors1`, he selects a wide $\mathcal{N}(0, 10)$, in `priors2` only $log(\mathcal{N}(0, 1))$.
+
+```{r select-priors}
+# number of random draws
+n = 100
+
+priors1 <- data.frame(
+  a = rnorm(n, 178, 20),
+  b = rnorm(n, 0, 10)
+) 
+
+priors2 <- data.frame(
+  a = rnorm(n, 178, 20),
+  b = rlnorm(n, 0, 1)
+) 
+```
+
+These priors mean that, on average, we assume that changing the `weight` variable by one unit changes the `height` variable by $\mathcal{N}(0, 10)$ or $log(\mathcal{N}(0, 1))$ units respectively.
+
+### Visualizing Priors
+
+To understand, whether these priors are feasible, we can visualize them.
+For this, we define a function which visualizes the randomly sampled values for $\alpha$ and $\beta$ as lines in a plot.
+
+```{r visualize-priors}
+visualize.priors <- function(p) {
+  ggplot(data = p) +
+    geom_abline(aes(intercept = a-b*avg.weight, slope = b), color = "grey") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_hline(yintercept = 272, linetype = "dashed") +
+    xlim(30, 60) +
+    ylim(0, 400) +
+    labs(x = "Weight in kg", y = "Height in cm") +
+    theme_bw()
+}
+```
+
+With this visualization, we can compare the two priors.
+
+```{r prior-predictive-check}
+priorpc1 <- visualize.priors(priors1)
+priorpc2 <- visualize.priors(priors2)
+
+priorpc1 | priorpc2
+```
+
+The `priors1` clearly show unrealistic assumptions.
+Some extreme slopes suggest that a person with 30kg weight might have a height of 400cm or more.
+Other slopes suggest that, given a certain weight, the height of a person may be negative.
+The `priors2` show a much more realistic scenario.
+All slopes are now positive (which is achieved by taking a `lnorm` instead of a `norm` distribution) and much less steep (achieved by a variance of 1 instead of 10).
+There are still a few extreme values, but the majority encode realistic assumptions.
+
+[^1]: McElreath, R. (2018). Statistical rethinking: A Bayesian course with examples in R and Stan. Chapman and Hall/CRC.
