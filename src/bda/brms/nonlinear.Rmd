@@ -1,0 +1,174 @@
+---
+title: "Non-linear Effects"
+author: "Julian Frattini"
+date: "2026-02-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(patchwork)
+
+library(brms)
+library(marginaleffects)
+```
+
+This notebook demonstrates the recovery of non-linear effects.
+
+## Data Simulation
+
+For this demonstration, we simulate a simple data set with two causes `x` and `z`, and one effect `y`.
+Notably, the effect of $x \ rightarrow y$ is not linear, but quadratic:
+
+$$y \sim \mathcal{N}(\mu = 5 + 3x^2 -2z, \sigma = 0.5)$$
+
+```{r simulate-data}
+n <- 1e3
+eff.x <- 3
+eff.z <- -2
+
+d <- data.frame(
+  x = rnorm(n, mean = 0, sd = 1),
+  z = rnorm(n, mean = 0, sd = 1)
+) %>% 
+  mutate(
+    y = rnorm(n, 5 + eff.x*x^2 + eff.z*z, 0.5)
+  )
+```
+
+For visual confirmation, we can plot the individual relationship between the two causes and the effect.
+
+```{r visualize-data}
+plt.xy <- ggplot(data = d, mapping = aes(x = x, y = y)) +
+  geom_point() +
+  theme_bw()
+
+plt.zy <- ggplot(data = d, mapping = aes(x = x, y = z)) +
+  geom_point() +
+  theme_bw()
+
+plt.xy | plt.zy
+```
+
+## Data Analysis
+
+In the data analysis, we compare two models: a naive baseline assuming only linear relationships, and a more complex model assuming a quadratic relationship.
+Quadratic predictors are encoded as `I(x^2)` in `brms`.
+
+```{r formulae}
+f1 <- bf(y ~ x + z)
+f2 <- bf(y ~ I(x^2) + z)
+
+get_prior(data = d, formula = f2, family = gaussian)
+```
+
+For the two models, we select uninformative priors.
+
+```{r priors}
+priors1 <- c(
+  prior(normal(5, 2), class = Intercept),
+  prior(normal(0, 2), class = b),
+  prior(exponential(1), class = sigma)
+)
+
+priors2 <- c(
+  prior(normal(5, 2), class = Intercept),
+  prior(normal(0, 2), class = b),
+  prior(normal(0, 1), class = b, coef = "IxE2"),
+  prior(exponential(1), class = sigma)
+)
+```
+
+Next, we perform a prior predictive check for the non-linear model to assure that the priors are feasible.
+
+```{r prior-predictive-check}
+p.nonlinear <- 
+  brm(
+    f2, data = d, family = gaussian, prior = priors2,
+    iter = 2000, warmup = 1000, chains = 4, cores = 4,
+    sample_prior="only",
+    file = "../../fits/p.nonlinear", file_refit = "on_change"
+  )
+
+pp_check(p.nonlinear, ndraws = 100)
+```
+
+Next, we train both the linear and the non-linear model and perform a posterior predictive check to assert that the models have trained well.
+
+```{r model-linear}
+m.linear <- 
+  brm(
+    f1, data = d, family = gaussian, prior = priors1,
+    iter = 2000, warmup = 1000, chains = 4, cores = 4,
+    file = "../../fits/m.linear", file_refit = "on_change"
+  )
+
+pp_check(m.linear, ndraws = 100)
+```
+
+```{r model-nonlinear}
+m.nonlinear <- 
+  brm(
+    f2, data = d, family = gaussian, prior = priors2,
+    iter = 2000, warmup = 1000, chains = 4, cores = 4,
+    file = "../../fits/m.nonlinear", file_refit = "on_change"
+  )
+
+pp_check(m.nonlinear, ndraws = 100)
+```
+
+## Evaluation
+
+Finally, we can evaluate the two models.
+First, we are going to look at the raw posterior distribution.
+The plot contains a dashed line at the true effect.
+It becomes very clear that the non-linear model approximates this true effect much better.
+
+```{r comparison-posteriors}
+post.x.linear <- summary(m.linear)$fixed["x",]
+post.x.nonlinear <- summary(m.nonlinear)$fixed["IxE2",]
+
+post.x <- rbind(post.x.linear, post.x.nonlinear)
+cbind(factor = rownames(post.x), post.x) %>% 
+  mutate(model = ifelse(factor == "x", "linear (x)", "quadratic (x^2)")) %>% 
+  ggplot(aes(x = Estimate, y = model, color = factor(model))) +
+    geom_point() +
+    geom_errorbar(aes(xmin = `l-95% CI`, xmax = `u-95% CI`)) +
+    geom_vline(xintercept = eff.x, color = "grey", linetype = "dashed") +
+    labs(x = "Estimated effect strength", y = "Regression model") +
+    guides(color = "none") +
+    theme_bw()
+```
+
+Second, we can plot marginal effects.
+It becomes very clear that the marginal effect inferred from the non-linear model is much closer to the actual distribution of the data.
+
+```{r comparison-marginal}
+ceff.linear <- conditional_effects(m.linear, effects = "x")[[1]] %>% 
+  select(x, estimate__, lower__, upper__) %>% 
+  mutate(model = "linear (x)")
+
+ceff.nonlinear <- conditional_effects(m.nonlinear, effects = "x")[[1]] %>% 
+  select(x, estimate__, lower__, upper__) %>% 
+  mutate(model = "quadratic (x^2)")
+
+rbind(ceff.linear, ceff.nonlinear) %>% 
+  ggplot(aes(x = x)) +
+    geom_line(aes(y = estimate__, color = model, group = model)) +
+    geom_ribbon(aes(ymin = lower__, ymax = upper__, fill = model, group = model), alpha = 0.2) +
+    labs(x = "x", y = "Estimation of y", color = "Model", fill = "Model") +
+    theme_bw()
+```
+
+Finally, we can compare the predictive power of the two models.
+The computed difference is strongly significant, supporting that the non-linear model estimates unseen data much better than the linear model.
+
+```{r comparison-loo}
+m.linear <- add_criterion(m.linear, "loo")
+m.nonlinear <- add_criterion(m.nonlinear, "loo")
+
+loo_compare(m.linear, m.nonlinear, criterion = "loo")
+```
+
