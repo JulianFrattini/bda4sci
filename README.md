@@ -10,10 +10,11 @@ The purpose of the seminar is to introduce software engineering researchers with
 
 ## Versions and contributors
 
-| Version | Date | Occasion | Contributors
-|---|---|---|---|
-| v1.0 | 2024-10-18 | Research visit at UPC, Barcelona | Julian Frattini |
-| v2.0 | 2025-04-28 | Tutorial at the [RE'25 conference](https://conf.researchr.org/track/RE-2025/RE-2025-tutorials) | Julian Frattini, Hans-Martin Heyn, Robert Feldt, Richard Torkar |
+| Version | Date | Occasion | Contributors | Material |
+|---|---|---|---|---|
+| v1.0 | 2024-10-18 | Seminar at [UPC](https://gessi.upc.edu/en), Barcelona | [Julian Frattini](https://julianfrattini.github.io/) | [2024-10-18-seminar-upc.pdf](slides/pdf/2024-10-18-seminar-upc.pdf) |
+| v2.0 | 2025-04-28 | Tutorial at the [RE'25 conference](https://conf.researchr.org/track/RE-2025/RE-2025-tutorials) | Julian Frattini, [Hans-Martin Heyn](https://martinheyn.github.io/), [Robert Feldt](https://www.cse.chalmers.se/~feldt/), [Richard Torkar](https://torkar.github.io/) | [2025-04-28-tutorial-reconf.pdf](slides/pdf/2025-04-28-tutorial-reconf.pdf) |
+| v2.1 | 2026-01-20 | Guest lecture and seminar at [TUM Heilbronn](https://chn.tum.de/de/), Germany | Julian Frattini | [2026-01-20-guestlecture-tum.pdf](slides/pdf/2026-01-20-guestlecture-tum.pdf) and [2026-01-20-seminar-tum.pdf](slides/presentations/2026-01-20-seminar-tum.pptx) |
 
 ## Structure
 
@@ -26,8 +27,11 @@ The repository contains the following directories and files.
 │   └── screenshots: images from the slides for tutorial applications
 ├── slides : PowerPoint presentations for teaching the tutorial/seminars
 │   ├── pdf: animation-free export of the presentations to PDF
-│   ├── intro-bda4sci.pptx: complete introduction to both SCI and BDA (from v1.0)
-│   └── intro-sci.pptx: focused introduction to SCI (from v2.0)
+│   └── presentations: complete slide decks for presentation
+│       ├── 2024-10-18-seminar-upc.pptx: complete introduction to both SCI and BDA
+│       ├── 2025-04-28-tutorial-reconf.pptx: conference tutorial introducing to SCI
+│       ├── 2026-01-20-guestlecture-tum.pptx: guest lecture introducing to SCI
+│       └── 2026-01-20-seminar-tum.pptx: guest lecture focusing on causal modeling
 └── src : source code to follow along the examples
 │   ├── basics : description of fundamental concepts
 │   │   ├── regression.Rmd : demonstration of the basic statistical analysis tool
