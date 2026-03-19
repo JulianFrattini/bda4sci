@@ -1,6 +1,7 @@
 # Introduction to Statistical Causal Inference
 
 [![GitHub](https://img.shields.io/github/license/JulianFrattini/bda-intro)](./LICENSE)
+[![DOI](https://zenodo.org/badge/859387197.svg)](https://doi.org/10.5281/zenodo.17649808)
 [![arXiv](https://img.shields.io/badge/arXiv-2511.03875-b31b1b.svg)](https://arxiv.org/abs/2511.03875)
 
 This repository contains the material for the introduction seminar to Statistical Causal Inference (SCI).
