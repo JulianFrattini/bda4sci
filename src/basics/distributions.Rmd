@@ -1,0 +1,82 @@
+---
+title: "Distributions"
+author: "Julian Frattini"
+date: "2026-04-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+
+```{r distribution-normal}
+data.frame(x = seq(from = -1, to = 3, length.out = 100)) %>% 
+  mutate(y = dnorm(x = x, mean = 1, sd = 0.5)) %>% 
+  ggplot(aes(x = x, y = y)) +
+    geom_line() +
+    labs(y = "Probability") +
+    ggtitle(expression(paste("Normal distribution (", mu, "=1, ", sigma^2, "=0.5)", sep=""))) +
+    theme_bw()
+
+ggsave("figures/distributions/normal.png", device = "png", 
+       width = 10, height = 6, unit = "cm")
+```
+
+```{r distribution-binomial}
+data.frame(x = seq(from = 0, to = 10, length.out = 11)) %>% 
+  mutate(y = dbinom(x = x, size = 10, prob = 0.5)) %>% 
+  ggplot(aes(x = x, y = y)) +
+    geom_bar(stat = "identity", width = 0.4) +
+    #ggtitle(expression(Normal~distribution~(mu~\,~sigma^2))) + 
+    labs(y = "Probability") +
+    ggtitle(expression(paste("Binomial distribution (", n, "=10, ", p, "=0.5)", sep=""))) +
+    scale_x_continuous(breaks=seq(from = 0, to = 10, length.out = 11)) +
+    theme_bw()
+
+ggsave("figures/distributions/binomial.png", device = "png", 
+       width = 10, height = 6, unit = "cm")
+```
+
+```{r distribution-poisson}
+data.frame(x = seq(from = 0, to = 10, length.out = 11)) %>% 
+  mutate(y = dpois(x = x, lambda = 5)) %>% 
+  ggplot(aes(x = x, y = y)) +
+    geom_bar(stat = "identity", width = 0.4) +
+    #ggtitle(expression(Normal~distribution~(mu~\,~sigma^2))) + 
+    labs(y = "Probability") +
+    ggtitle(expression(paste("Poisson distribution (", lambda, "=5)", sep=""))) +
+    scale_x_continuous(breaks=seq(from = 0, to = 10, length.out = 11)) +
+    theme_bw()
+
+ggsave("figures/distributions/poisson.png", device = "png", 
+       width = 10, height = 6, unit = "cm")
+```
+
+```{r distribution-gamma}
+data.frame(x = seq(from = 0, to = 10, length.out = 100)) %>% 
+  mutate(y = dgamma(x = x, shape = 5, rate = 1)) %>% 
+  ggplot(aes(x = x, y = y)) +
+    geom_line() +
+    labs(y = "Probability") +
+    ggtitle(expression(paste("Gamma distribution (", alpha, "=5, ", beta, "=1)", sep=""))) +
+    theme_bw()
+
+ggsave("figures/distributions/gamma.png", device = "png", 
+       width = 10, height = 6, unit = "cm")
+```
+
+```{r distribution-beta}
+data.frame(x = seq(from = 0, to = 1, length.out = 100)) %>% 
+  mutate(y = dbeta(x = x, shape1 = 3, shape2 = 2)) %>% 
+  ggplot(aes(x = x, y = y)) +
+    geom_line() +
+    labs(y = "Probability") +
+    ggtitle(expression(paste("Beta distribution (", beta, "=3, ", gamma, "=2)", sep=""))) +
+    theme_bw()
+
+ggsave("figures/distributions/beta.png", device = "png", 
+       width = 10, height = 6, unit = "cm")
+```

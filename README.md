@@ -1,11 +1,16 @@
-# Introduction to Statistical Causal Inference
+# Bayesian Data Analysis for Statistical Causal Inference
 
 [![GitHub](https://img.shields.io/github/license/JulianFrattini/bda-intro)](./LICENSE)
 [![DOI](https://zenodo.org/badge/859387197.svg)](https://doi.org/10.5281/zenodo.17649808)
 [![arXiv](https://img.shields.io/badge/arXiv-2511.03875-b31b1b.svg)](https://arxiv.org/abs/2511.03875)
 
-This repository contains the material for the introduction seminar to Statistical Causal Inference (SCI).
-The purpose of the seminar is to introduce software engineering researchers with a background in analysis of quantitative data to a causal framework for inferential statistics proposed by Judea Pearl[^1] and Richard McElreath.[^2]
+This repository contains the material for tutorials on two topics constituting a paradigm shift for analyzing quantitative data from empirical studies:
+
+1. **Statistical causal inference** (SCI): a framework for drawing causal, unbiased conclusions from observational data
+2. **Bayesian data analysis** (BDA): a set of statistical techniques based on Bayes' theorem allowing sophisticated and valid analyses of quantitative data
+
+The purpose of the material is to host seminars and tutorials catching software engineering researchers working with quantitative data up with the aforementioned paradigm shift in data analysis.
+The material is based on the seminal work of Judea Pearl[^1] and Richard McElreath.[^2]
 
 ![Banner of the SCI tutorial at RE25](./publicity/banners/seminar-isci-re25-banner.png)
 
