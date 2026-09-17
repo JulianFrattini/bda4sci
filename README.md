@@ -51,7 +51,8 @@ The repository contains the following directories and files.
 │   ├── bda : implementations of BDA concepts and techniques
 │   │   ├── brms : code snippets using the brms package
 │   │   │   ├── bda-complete.Rmd : complete example of a simple Bayesian regression model
-│   │   │   └── nonlinear.Rmd : estimation of a non-linear effect with different models
+│   │   │   ├── nonlinear.Rmd : estimation of a non-linear effect with different models
+│   │   │   └── quadratic.Rmd : estimation of a quadratic effect with different models
 │   │   └── rethinking : code snippets using the rethinking package
 │   │       ├── prior-predictive-checks.Rmd : demonstration of prior predictive checks 
 │   │       └── model-notation.Rmd : demonstration of statistical model specification

@@ -1,174 +1,276 @@
 ---
-title: "Non-linear Effects"
-author: "Julian Frattini"
-date: "2026-02-05"
-output: html_document
+title: "Investigating a Suspected Non-Linear Effect: Simulation and Model Comparison"
+author: "Julian"
+date: "2026-09-17"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
-library(patchwork)
-
 library(brms)
-library(marginaleffects)
+library(loo)
+library(bayesplot)
+library(tidybayes)
+
+set.seed(2026)
 ```
 
-This notebook demonstrates the recovery of non-linear effects.
+This notebook demonstrates how to deal with a predictor `x` that may have a non-linear relationship with an outcome `y`.
+The following code shows - based on a simulated example - how a naive model assuming a linear effect fails, and how alternative models using splines and Gaussian processes can recover such effect.
 
-## Data Simulation
+## Simulation
 
-For this demonstration, we simulate a simple data set with two causes `x` and `z`, and one effect `y`.
-Notably, the effect of $x \ rightarrow y$ is not linear, but quadratic:
-
-$$y \sim \mathcal{N}(\mu = 5 + 3x^2 -2z, \sigma = 0.5)$$
+We simulate a data set where $x \in [0; 20]$ affects $y$ both linearly with a slope of $\beta_x = 0.4$, but also has a sinusoidal wiggle around this linear trend.
+This could represent a seasonal or saturating-with-oscillation pattern
 
 ```{r simulate-data}
-n <- 1e3
-eff.x <- 3
-eff.z <- -2
+n <- 200
 
-d <- data.frame(
-  x = rnorm(n, mean = 0, sd = 1),
-  z = rnorm(n, mean = 0, sd = 1)
-) %>% 
+f_true <- function(x) 0.4 * x + 4 * sin(0.8 * x)
+
+sim_data <- tibble(
+  x = runif(n, min = 0, max = 20)
+) %>%
   mutate(
-    y = rnorm(n, 5 + eff.x*x^2 + eff.z*z, 0.5)
-  )
-```
+    mu_true = f_true(x),
+    y = mu_true + rnorm(n, mean = 0, sd = 1.5)
+  ) %>%
+  arrange(x)
 
-For visual confirmation, we can plot the individual relationship between the two causes and the effect.
-
-```{r visualize-data}
-plt.xy <- ggplot(data = d, mapping = aes(x = x, y = y)) +
-  geom_point() +
+sim_data %>%
+  ggplot(aes(x = x)) +
+  geom_point(aes(y = y), alpha = 0.4) +
+  geom_line(aes(y = mu_true), colour = "firebrick", linewidth = 1) +
+  labs(
+    title = "Simulated data with a known non-linear mean function",
+    subtitle = "Red line = true f(x); points = observed data with noise",
+    y = "y"
+  ) +
   theme_bw()
-
-plt.zy <- ggplot(data = d, mapping = aes(x = x, y = z)) +
-  geom_point() +
-  theme_bw()
-
-plt.xy | plt.zy
 ```
 
 ## Data Analysis
 
-In the data analysis, we compare two models: a naive baseline assuming only linear relationships, and a more complex model assuming a quadratic relationship.
-Quadratic predictors are encoded as `I(x^2)` in `brms`.
+In the following subsections, we compare multiple models in their ability to recover this true effect.
 
-```{r formulae}
-f1 <- bf(y ~ x + z)
-f2 <- bf(y ~ I(x^2) + z)
+### Linear Model
 
-get_prior(data = d, formula = f2, family = gaussian)
-```
+We first fit the model an analyst might reach for by default: a plain linear effect of `x` on the mean of `y`.
 
-For the two models, we select uninformative priors.
-
-```{r priors}
-priors1 <- c(
-  prior(normal(5, 2), class = Intercept),
-  prior(normal(0, 2), class = b),
-  prior(exponential(1), class = sigma)
+```{r fit-linear}
+m.linear <- brm(
+  y ~ x,
+  data   = sim_data,
+  family = gaussian(),
+  prior  = c(
+    prior(normal(0, 5), class = "Intercept"),
+    prior(normal(0, 5), class = "b"),
+    prior(exponential(1), class = "sigma")
+  ),
+  chains = 4, cores = 4, iter = 2000, seed = 1,
+  refresh = 0,
+  file = "../../fits/m.sin.naive", file_refit = "on_change"
 )
 
-priors2 <- c(
-  prior(normal(5, 2), class = Intercept),
-  prior(normal(0, 2), class = b),
-  prior(normal(0, 1), class = b, coef = "IxE2"),
-  prior(exponential(1), class = sigma)
+summary(m.linear)
+```
+
+Overlaying the fitted regression line on the true function already shows that this naive model can only capture the overall linear trend but misses the oscillation.
+
+```{r linear-fit-plot}
+sim_data %>%
+  add_epred_draws(m.linear, ndraws = 100) %>%
+  ggplot(aes(x = x, y = y)) +
+  geom_line(aes(y = .epred, group = .draw), alpha = 0.05, colour = "steelblue") +
+  geom_point(alpha = 0.35) +
+  geom_line(aes(y = mu_true), colour = "firebrick", linewidth = 1) +
+  labs(
+    title = "Naive linear fit vs. true function",
+    subtitle = "Blue = posterior draws of the linear fit; red = true f(x)",
+    y = "y"
+  ) +
+  theme_bw()
+```
+
+The residual plot clearly shows the issue.
+A well-specified model should leave residuals scattered randomly around zero with no structure. 
+Instead, we see a clear, systematic wave pattern — a textbook sign of an unmodelled non-linear effect.
+
+```{r linear-residuals}
+sim_data %>%
+  add_residual_draws(m.linear) %>%
+  group_by(x) %>%
+  summarise(resid_mean = mean(.residual), .groups = "drop") %>%
+  ggplot(aes(x = x, y = resid_mean)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(alpha = 0.5) +
+  geom_smooth(formula = y~x, method = "loess", se = FALSE, colour = "firebrick") +
+  labs(
+    title = "Residuals of the naive linear model vs. x",
+    subtitle = "Systematic wave pattern indicates an unmodelled non-linear effect",
+    y = "Mean posterior residual"
+  ) +
+  theme_bw()
+```
+Instead of making an a-priori assumption about the shape of the effect, we can fit flexible specifications that can recover a wide range of shapes (including the linear one in case it were actually correct).
+
+### B-spline smooth
+
+One approach is by modelling the predictor as a B-spline, i.e., a piecewise polynomial of maximum order `k`, using `mgcv::s()`.
+
+```{r fit-spline}
+m.spline <- brm(
+  y ~ s(x, bs = "bs", k = 10),
+  data   = sim_data,
+  family = gaussian(),
+  prior  = c(
+    prior(normal(0, 5), class = "Intercept"),
+    prior(exponential(1), class = "sigma")
+  ),
+  chains = 4, cores = 4, iter = 2000, seed = 2,
+  control = list(adapt_delta = 0.95), refresh = 0,
+  file = "../../fits/m.sin.spline", file_refit = "on_change"
 )
+
+summary(m.spline)
 ```
 
-Next, we perform a prior predictive check for the non-linear model to assure that the priors are feasible.
+The model summary contains two unique outputs for B-spline models:
 
-```{r prior-predictive-check}
-p.nonlinear <- 
-  brm(
-    f2, data = d, family = gaussian, prior = priors2,
-    iter = 2000, warmup = 1000, chains = 4, cores = 4,
-    sample_prior="only",
-    file = "../../fits/p.nonlinear", file_refit = "on_change"
-  )
+- `sx_1` is the unpenalized part of the spline basis, i.e., its linear/null-space component. It can be interpreted like a ordinary regression coefficient and allows inference about the overall linear trend.
+- `sds(sx_1)` is the estimated standard deviation of the penalized (i.e., "wiggly") basis coefficients (i.e., the Bayesian analogue of the smoothing parameter). A posterior concentrated implies strong shrinkage, i.e., evidence against meaningful non-linearity, while a posterior not consistant with 0 supports deviation from lienarity.
 
-pp_check(p.nonlinear, ndraws = 100)
+The individual penalized coefficients themselves (`s_sx_1_1`, `s_sx_1_2`, ...) are not printed by default (like random-effect levels), but can be accessed via `as_draws_df(model) %>% select(starts_with("s_"))`.
+
+### Gaussian process term
+
+An alternative is a Gaussian process (GP) term, which is a stochastic process such that every finite collection of random variables has a multivariate distribution.
+
+```{r fit-gp}
+m.gp <- brm(
+  #y ~ gp(x),
+  y ~ gp(x, k = 20, c = 5/4), # better-scaling HSGP variant
+  data   = sim_data,
+  family = gaussian(),
+  prior  = c(
+    prior(normal(0, 5), class = "Intercept"),
+    prior(exponential(1), class = "sigma")
+  ),
+  chains = 4, cores = 4, iter = 2000, seed = 3,
+  control = list(adapt_delta = 0.95), refresh = 0,
+  file = "../../fits/m.sin.gp", file_refit = "on_change"
+)
+
+summary(m.gp)
 ```
 
-Next, we train both the linear and the non-linear model and perform a posterior predictive check to assert that the models have trained well.
 
-```{r model-linear}
-m.linear <- 
-  brm(
-    f1, data = d, family = gaussian, prior = priors1,
-    iter = 2000, warmup = 1000, chains = 4, cores = 4,
-    file = "../../fits/m.linear", file_refit = "on_change"
-  )
+Since an exact Gaussian process term is computationally expensive, `brms` offers a Hilbert-space approximate GP (HSGP), i.e., a GP with a fixed set of basis functions (conceptually close to splines) that scales better.
+For example, `brms::gp(x, k = 20, c = 5/4)` defines `k = 20` basis functions and approximation boundary beyond the data range of `c = 5/4`.
+Alternative ways to speed up the computation is to use `backend = "cmdstanr` (instead of `backend = "rstan`) which is faster for GP models specifically, or a lower `adapt_delta = 0.8` (instead of 0.95 here).
 
-pp_check(m.linear, ndraws = 100)
-```
+The GP's estimated length-scale (`lscale`) is directly interpretable: a short length-scale relative to the range of `x` (here: $[0; 20]$) indicates the function wiggles quickly (strong non-linearity), while a length-scale comparable to or larger than the whole range of `x` would indicate the fit is close to linear/flat.
 
-```{r model-nonlinear}
-m.nonlinear <- 
-  brm(
-    f2, data = d, family = gaussian, prior = priors2,
-    iter = 2000, warmup = 1000, chains = 4, cores = 4,
-    file = "../../fits/m.nonlinear", file_refit = "on_change"
-  )
-
-pp_check(m.nonlinear, ndraws = 100)
+```{r gp-lengthscale}
+m.gp %>%
+  as_draws_df() %>%
+  select(starts_with("lscale")) %>%
+  summarise(across(everything(), list(mean = mean, q5 = ~ quantile(.x, 0.05), q95 = ~ quantile(.x, 0.95))))
 ```
 
 ## Evaluation
 
-Finally, we can evaluate the two models.
-First, we are going to look at the raw posterior distribution.
-The plot contains a dashed line at the true effect.
-It becomes very clear that the non-linear model approximates this true effect much better.
+### Marginal Effects
 
-```{r comparison-posteriors}
-post.x.linear <- summary(m.linear)$fixed["x",]
-post.x.nonlinear <- summary(m.nonlinear)$fixed["IxE2",]
+The marginal effect of `x` on `y` in the two complex models allows a better inference.
+We plot each model's estimated conditional mean function against the true `f(x)` used in the simulation.
 
-post.x <- rbind(post.x.linear, post.x.nonlinear)
-cbind(factor = rownames(post.x), post.x) %>% 
-  mutate(model = ifelse(factor == "x", "linear (x)", "quadratic (x^2)")) %>% 
-  ggplot(aes(x = Estimate, y = model, color = factor(model))) +
-    geom_point() +
-    geom_errorbar(aes(xmin = `l-95% CI`, xmax = `u-95% CI`)) +
-    geom_vline(xintercept = eff.x, color = "grey", linetype = "dashed") +
-    labs(x = "Estimated effect strength", y = "Regression model") +
-    guides(color = "none") +
-    theme_bw()
+```{r conditional-effects-plot}
+new_x <- tibble(x = seq(0, 20, length.out = 200))
+
+pred_spline <- new_x %>%
+  add_epred_draws(m.spline) %>%
+  group_by(x) %>%
+  summarise(
+    estimate = mean(.epred),
+    lower    = quantile(.epred, 0.025),
+    upper    = quantile(.epred, 0.975),
+    .groups  = "drop"
+  ) %>%
+  mutate(model = "B-spline")
+
+pred_gp <- new_x %>%
+  add_epred_draws(m.gp) %>%
+  group_by(x) %>%
+  summarise(
+    estimate = mean(.epred),
+    lower    = quantile(.epred, 0.025),
+    upper    = quantile(.epred, 0.975),
+    .groups  = "drop"
+  ) %>%
+  mutate(model = "Gaussian process")
+
+bind_rows(pred_spline, pred_gp) %>%
+  ggplot(aes(x = x, y = estimate)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = model), alpha = 0.25) +
+  geom_line(aes(colour = model), linewidth = 1) +
+  geom_line(
+    data = tibble(x = new_x$x, mu_true = f_true(new_x$x)),
+    aes(x = x, y = mu_true),
+    colour = "black", linetype = "dashed", linewidth = 0.8
+  ) +
+  facet_wrap(~model) +
+  labs(
+    title = "Estimated effect of x under flexible specifications",
+    subtitle = "Dashed black line = true f(x); shaded band = 95% credible interval",
+    y = "Estimated mean of y"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none")
 ```
 
-Second, we can plot marginal effects.
-It becomes very clear that the marginal effect inferred from the non-linear model is much closer to the actual distribution of the data.
+Both flexible models visibly track the oscillation that the linear model missed, with the true function comfortably inside the credible interval
 
-```{r comparison-marginal}
-ceff.linear <- conditional_effects(m.linear, effects = "x")[[1]] %>% 
-  select(x, estimate__, lower__, upper__) %>% 
-  mutate(model = "linear (x)")
+### Predictive Accuracy
 
-ceff.nonlinear <- conditional_effects(m.nonlinear, effects = "x")[[1]] %>% 
-  select(x, estimate__, lower__, upper__) %>% 
-  mutate(model = "quadratic (x^2)")
+We now compare all three models' out-of-sample predictive accuracy. 
+This is a useful *complement* to the plots above — not a replacement — since it gives a single, easily reportable summary of the evidence.
 
-rbind(ceff.linear, ceff.nonlinear) %>% 
-  ggplot(aes(x = x)) +
-    geom_line(aes(y = estimate__, color = model, group = model)) +
-    geom_ribbon(aes(ymin = lower__, ymax = upper__, fill = model, group = model), alpha = 0.2) +
-    labs(x = "x", y = "Estimation of y", color = "Model", fill = "Model") +
-    theme_bw()
-```
-
-Finally, we can compare the predictive power of the two models.
-The computed difference is strongly significant, supporting that the non-linear model estimates unseen data much better than the linear model.
-
-```{r comparison-loo}
+```{r loo-comparison}
 m.linear <- add_criterion(m.linear, "loo")
-m.nonlinear <- add_criterion(m.nonlinear, "loo")
+m.spline <- add_criterion(m.spline, "loo")
+m.gp     <- add_criterion(m.gp, "loo")
 
-loo_compare(m.linear, m.nonlinear, criterion = "loo")
+loo_compare(m.linear, m.spline, m.gp)
 ```
 
+Clearly the linear model `m.linear` fails to predict out of sample.
+The GP model `m.gp` performs best.
+Since the `elpd_diff` is not more than twice than its `se_diff`, the B-spline model `m.spline` can be considered of nearly equivalent predictive accuracy.
+
+Before trusting the LOO comparison, check that the importance-sampling approximation was reliable for the flexible models (few or no observations with Pareto k > 0.7):
+
+```{r pareto-k}
+loo(m.spline) %>% plot(label_points = TRUE)
+loo(m.gp) %>% plot(label_points = TRUE)
+```
+
+### Alternative: Stacking Weights
+
+The predictive stacking weights across all three models reflects genuine uncertainty about functional form rather than collapsing it into a binary decision:
+
+```{r stacking-weights}
+loo_model_weights(
+  m.linear, m.spline, m.gp,
+  model_names = c("linear", "spline", "gp"),
+  method = "stacking"
+)
+```
+
+Since the linear model receives a weight close to zero, that's further corroborating evidence — on top of the plots and the LOO comparison — that the effect of `x` is genuinely non-linear.
