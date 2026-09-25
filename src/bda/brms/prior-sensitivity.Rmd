@@ -1,0 +1,130 @@
+---
+title: "Prior Sensitivity Analysis"
+author: "Julian Frattini"
+date: "2026-09-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(brms)
+```
+
+This document demonstrates a prior sensitivity analysis, which shows how sensitive the posterior is to the chosen priors.
+
+## Preparation
+
+We investigate the simplest effect between two normally distributed variables $x$ and $y$.
+To investigate the questions, we simulate a simple dataset, where the target effect to estimate is `beta`.
+
+```{r simulate-data}
+n <- 45
+beta <- 0.7
+
+d1 <- data.frame(x = rnorm(n, 0, 1)) %>% 
+  mutate(y = rnorm(n, 1 + beta*x, 0.5))
+
+ggplot(d1, aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(formula = 'y ~ x', method = 'lm') +
+  theme_bw()
+```
+
+We can train a simple model with arbitrary prior and posterior values.
+
+```{r model}
+f1 <- bf(y ~ 1 + x)
+
+priors1 <- c(
+  prior(normal(0, 1), class = Intercept),
+  prior(normal(0, 1), class = b),
+  prior(exponential(1), class = sigma)
+)
+
+m1 <- 
+  brm(
+    f1, data = d1, family = gaussian, prior = priors1,
+    iter = 2000, warmup = 1000, chains = 4, cores = 4,
+    file = "../../fits/m.sensitivity1", file_refit = "on_change"
+  )
+
+summary(m1)
+```
+
+## Sensitivity Analysis
+
+The idea is to pick a prior hyperparameter $\gamma$ to perturb, refit the model across a range of $\gamma$ values, and track how a posterior quantity of interest $\delta$ - the effect of $x$ on $y$ - responds. 
+If $\delta$ barely moves as $\gamma$ varies over a reasonable range, the conclusion is robust to prior specification.
+If it swings a lot, the conclusion is prior-driven rather than data-driven.
+
+In the simple model, the natural $\gamma$ to perturb is the width of the prior on `b_x`.
+$\delta$ is the posterior estimate of `b_x`.
+
+```{r prior-generator}
+make_priors <- function(gamma) {
+  c(
+    prior(normal(0, 1), class = Intercept),
+    set_prior(paste0("normal(0,", gamma, ")"), class = "b"),
+    prior(exponential(1), class = sigma)
+  )
+}
+```
+
+Re-fit the model for several different values of $\gamma$ and cache them individually.
+
+```{r refit-m1}
+gammas <- c(0.1, 0.25, 0.5, 1, 2, 5)
+
+fits <- purrr::map(gammas, function(g) {
+  brm(
+    f1, data = d1, family = gaussian, prior = make_priors(g),
+    iter = 2000, warmup = 1000, chains = 4, cores = 4,
+    file = paste0("../../fits/m.sensitivity1_g", g),
+    file_refit = "on_change"
+  )
+})
+```
+
+Now, extract the posterior estimate $\delta$ for each value of $\gamma$.
+
+```{r extract-delta}
+sensitivity_results <- purrr::map2_dfr(gammas, fits, function(g, fit) {
+  fixef(fit)["x", ] %>%
+    as.list() %>%
+    as_tibble() %>%
+    mutate(gamma = g)
+})
+
+sensitivity_results
+```
+
+Visualize the sensitivity of the effect across the different values of $\gamma$.
+
+```{r visualize-sensitivity}
+ggplot(sensitivity_results, aes(x = gamma, y = Estimate)) +
+  geom_pointrange(aes(ymin = Q2.5, ymax = Q97.5)) +
+  #scale_x_log10() +
+  geom_hline(yintercept = beta, linetype = "dashed", color = "red") +
+  labs(
+    x = "γ (prior SD on b_x)",
+    y = "δ (posterior estimate of effect of x)",
+    title = "Gamma-delta sensitivity analysis"
+  ) +
+  theme_bw()
+```
+
+The figure is to be interpreted as follows:
+
+- At $\gamma = 0.1$ (tight prior), $\delta$ is pulled down to $\sim0.44$, well below the true $\beta=0.7$, and even the upper end of its credible interval ($\sim0.58$) doesn't reach it. The prior overpowers the likelihood: with a `normal(0, 0.1)` prior on `b_x`, the model is told "the effect is almost certainly near zero," and with only $n = 45$ observations the data cannot overrule that.
+- At $\gamma = 0.25$, the pull is much weaker at only $\delta \approx 0.65$, and the interval now contains 0.7. The prior is getting overpowered by the data.
+- From $\gamma = 0.5$ onward, $\delta$ assumes $\sim0.69–0.70$, aligning with the ground truth, and the credible interval width barely changes as $\gamma$ keeps increasing (0.5 → 1 → 2 → 5). This is the expected plateau: once the prior is wide enough to stop actively constraining `b_x`, the likelihood fully determines the posterior, and further loosening the prior does nothing more.
+
+This means that the effect of $x$ on $y$ is robust to prior choice, provided the prior SD is at least around 0.5. 
+Below that threshold, the conclusion is prior-driven rather than data-driven.
+Above that threshold, the data speak for themselves, and reporting normal(0,1) for the prior is safely in the "plateau" region.
+
+A transition zone at very tight priors followed by a flat plateau is the hoped-for result. 
+If the whole curve had been sloped rather than flattening out, that would signal that even the original prior was still exerting meaningful influence.
+
